@@ -497,9 +497,9 @@ function updateStatusBar(): void {
     if (currentConfig.showModelName) {
       parts.push(currentModel);
     }
-    parts.push(`${t('statusBar.turnAiTime')}${formatThinkTime(turnAiAccumulatorMs)}`);
+    parts.push(`${t('statusBar.turnAiTime')} ${formatThinkTime(turnAiAccumulatorMs)}`);
     parts.push(`${abbreviateTokens(turnTokens)} ${formatCost(costInDisplayCurrency(turnCost, currency), currency)}${unknownMark}`);
-    parts.push(`${t('statusBar.cumulative')}${abbreviateTokens(totalTokens)} ${formatCost(displayCumulativeCost, currency)}${unknownMark}`);
+    parts.push(`${t('statusBar.cumulative')} ${abbreviateTokens(totalTokens)} ${formatCost(displayCumulativeCost, currency)}${unknownMark}`);
     statusBarItem.text = `$(pulse) ${parts.join(' | ')}`;
   }
 

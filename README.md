@@ -11,7 +11,7 @@ Know what every Claude Code conversation actually costs — in the status bar, p
 Claude Code writes a JSONL transcript for every session. This extension reads those files locally and turns them into live token and cost numbers. No API keys, no telemetry, no network required for the core features.
 
 ```
-$(pulse) Fix auth bug | deepseek-v4.1-flash | AI 3.2s | 85K ¥0.012 | total 1.2M ¥0.19
+$(pulse) Fix auth bug | AI time 3.2s | 85.0K ¥0.0120 | Total 1.2M ¥0.1900
 ```
 
 ---
@@ -24,7 +24,7 @@ $(pulse) Fix auth bug | deepseek-v4.1-flash | AI 3.2s | 85K ¥0.012 | total 1.2M
 | **Per-message table** | Every API response with its own token counts, cache usage, duration and cost. De-duplicated by `message.id`, so streamed snapshots are never counted twice. |
 | **Sessions dashboard** | Current day / week / month / year / all time, grouped by model when you need it. The full dashboard opens in an editor tab from the status-bar button; the bottom-panel view is opt-in. |
 | **Session picker** | Follow any recorded session, not only the newest one. Subagent transcripts are included in both live and historical totals. |
-| **Accurate pricing** | 100+ models from Anthropic, OpenAI, Google, Alibaba Bailian (DeepSeek + Qwen), Moonshot, Zhipu, ByteDance, Baidu, xAI and Mistral. Peak/off-peak pricing is applied per channel (Bailian and DeepSeek official use different windows). |
+| **Accurate pricing** | 178 models from Anthropic, OpenAI, Google, Alibaba Bailian (DeepSeek + Qwen), Moonshot, Zhipu, ByteDance, Baidu, xAI and Mistral — 11 providers. Peak/off-peak pricing is applied per channel (Bailian and DeepSeek official use different windows). |
 | **Offline-first** | Prices ship inside the extension. Updates are optional and fetched from an Aliyun OSS catalog that works behind restrictive networks. |
 | **Custom models** | Add your own provider or private deployment from the command palette — no JSON editing. |
 | **11 languages · 7 currencies** | en, zh-CN, zh-TW, ja, ko, es, ar, pt, de, fr, ru · CNY, USD, EUR, JPY, KRW, GBP, auto. |
@@ -109,7 +109,7 @@ Search `claudeTokenMonitor` in Settings (`Ctrl+,`):
 
 ```bash
 npm install
-npm test          # compile + 22 unit tests (node:test)
+npm test          # compile + 62 unit tests (node:test)
 npm run watch     # TypeScript watch mode
 npx vsce package  # build a .vsix
 ```
@@ -134,7 +134,7 @@ Pull requests are welcome. Please run `npm test` before opening one.
 实时显示 Claude Code 每个会话、每条消息、每一轮的 token 用量与费用。所有数据都在本地从 Claude Code 已经写好的 transcript 文件中读取，不需要 API key，不上传任何数据。
 
 ```
-$(pulse) 修复登录 Bug | deepseek-v4.1-flash | AI 3.2s | 本轮 85K ¥0.012 | 累计 1.2M ¥0.19
+$(pulse) 修复登录Bug | AI耗时 3.2s | 85.0K ¥0.0120 | 累计 1.2M ¥0.1900
 ```
 
 ## 功能
@@ -145,7 +145,7 @@ $(pulse) 修复登录 Bug | deepseek-v4.1-flash | AI 3.2s | 本轮 85K ¥0.012 |
 | **逐条消息明细** | 每条 API 响应的 token、缓存、耗时、费用；按 `message.id` 去重，流式快照不会重复计数 |
 | **会话看板** | 当前 / 每天 / 每周 / 每月 / 每年 / 全部，可按模型分组；点击状态栏按钮在编辑器标签页打开完整看板，底部面板改为自行开启 |
 | **会话选择** | 可跟随任意历史会话，不只是最新会话；子代理（subagent）的用量也计入实时与历史统计 |
-| **定价准确** | 内置 100+ 模型：Anthropic、OpenAI、Google、阿里云百炼（DeepSeek + Qwen）、Moonshot、智谱、豆包、文心、xAI、Mistral；峰谷价按渠道区分（百炼与 DeepSeek 官方规则不同） |
+| **定价准确** | 内置 178 个模型:Anthropic、OpenAI、Google、阿里云百炼（DeepSeek + Qwen）、Moonshot、智谱、豆包、文心、xAI、Mistral，共 11 家厂商；峰谷价按渠道区分（百炼与 DeepSeek 官方规则不同） |
 | **离线优先** | 定价随插件打包；联网更新可选，目录放在阿里云 OSS，国内网络可直连 |
 | **自定义模型** | 命令面板引导添加私有部署或新模型，无需手写 JSON |
 | **11 种语言 · 7 种货币** | en / zh-CN / zh-TW / ja / ko / es / ar / pt / de / fr / ru · CNY / USD / EUR / JPY / KRW / GBP / 自动 |
@@ -191,7 +191,7 @@ Claude Code 会把同一条 assistant 消息的多个流式快照写入 transcri
 
 ```bash
 npm install
-npm test          # 编译 + 22 个单元测试
+npm test          # 编译 + 62 个单元测试
 npx vsce package  # 打包 .vsix
 ```
 
