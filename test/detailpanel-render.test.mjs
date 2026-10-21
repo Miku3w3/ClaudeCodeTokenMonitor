@@ -237,11 +237,13 @@ test('agentStats suppresses the split when the session had no subagents', () => 
   assert.ok(!appEl.innerHTML.includes('Agent split'));
 });
 
-test('split bar colours: main green, subagent purple', () => {
+test('split bar colours follow the theme: main green, subagent purple', () => {
   const { pageHtml } = bootWebview();
-  assert.ok(pageHtml.includes('--sub: #c586c0'), 'purple is a fixed colour, not a theme variable');
-  assert.ok(!/--sub:\s*var\(/.test(pageHtml), 'no theme variable can remap the subagent colour');
-  assert.ok(pageHtml.includes('.agent-bar-main { background: var(--accent);'), 'main bar uses green accent');
-  assert.ok(pageHtml.includes('.agent-bar-sub { background: var(--sub);'), 'sub bar uses purple');
-  assert.ok(pageHtml.includes('color: var(--sub);'), 'subagent chip/row use purple');
+  assert.ok(
+    pageHtml.includes('--sub: var(--vscode-charts-purple, var(--vscode-terminal-ansiBrightMagenta, #c586c0))'),
+    'subagent colour comes from the theme, with purple fallbacks',
+  );
+  assert.ok(pageHtml.includes('.agent-bar-main { background: var(--accent);'), 'main bar uses the theme green');
+  assert.ok(pageHtml.includes('.agent-bar-sub { background: var(--sub);'), 'sub bar uses the theme purple');
+  assert.ok(pageHtml.includes('color: var(--sub);'), 'subagent chip/row follow the same variable');
 });

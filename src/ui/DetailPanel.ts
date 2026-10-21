@@ -268,8 +268,8 @@ export class DetailPanel implements vscode.WebviewViewProvider {
     --card-bg: var(--vscode-editor-inactiveSelectionBackground, #3a3d41);
     --accent: var(--vscode-charts-green, #89d185);
     --accent2: var(--vscode-charts-blue, #40a6ff);
-    /* subagents: fixed purple — theme chart colors vary (some themes map "purple" to blue) */
-    --sub: #c586c0;
+    /* subagents: follow the theme's purple; ANSI magenta and #c586c0 are fallbacks */
+    --sub: var(--vscode-charts-purple, var(--vscode-terminal-ansiBrightMagenta, #c586c0));
     --warn: var(--vscode-charts-yellow, #e2b714);
     --muted: var(--vscode-descriptionForeground, #9d9d9d);
     --font: var(--vscode-font-family, 'Consolas', monospace);
