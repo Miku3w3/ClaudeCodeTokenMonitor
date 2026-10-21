@@ -55,7 +55,7 @@ mv -f claude-code-token-monitor-<version>.vsix archive/
 
 > VSCode 路径带版本号,升级后会变 —— 先 `ls "C:/Program Files/Miku3w3/"` 确认。
 
-然后 `Ctrl+Shift+P` → `Developer: Reload Window`,按 `docs/release-todo.md` 里的清单手测。
+然后 `Ctrl+Shift+P` → `Developer: Reload Window`,按发布的检查清单手测(清单在仓库外的 `cctm-ops/release-todo.md`)。
 
 **装不上/装上了但功能没变**时,先确认版本号一致:同名版本重装会缓存旧包,必要时先卸载再装。
 

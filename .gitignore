@@ -5,3 +5,7 @@ archive/
 .DS_Store
 *.log
 extract_tmp/
+
+# Internal operations notes — never publish these (server address, deploy steps, audit raw data).
+docs/audit/
+docs/pricing-hosting.md
