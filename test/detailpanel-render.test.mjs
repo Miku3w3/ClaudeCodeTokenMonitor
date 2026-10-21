@@ -239,7 +239,8 @@ test('agentStats suppresses the split when the session had no subagents', () => 
 
 test('split bar colours: main green, subagent purple', () => {
   const { pageHtml } = bootWebview();
-  assert.ok(pageHtml.includes('--sub: var(--vscode-charts-purple'), 'purple subagent variable');
+  assert.ok(pageHtml.includes('--sub: #c586c0'), 'purple is a fixed colour, not a theme variable');
+  assert.ok(!/--sub:\s*var\(/.test(pageHtml), 'no theme variable can remap the subagent colour');
   assert.ok(pageHtml.includes('.agent-bar-main { background: var(--accent);'), 'main bar uses green accent');
   assert.ok(pageHtml.includes('.agent-bar-sub { background: var(--sub);'), 'sub bar uses purple');
   assert.ok(pageHtml.includes('color: var(--sub);'), 'subagent chip/row use purple');
