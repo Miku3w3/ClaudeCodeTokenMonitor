@@ -29,8 +29,6 @@ export interface ExtensionConfig {
   budgetWarning: number;
   pollIntervalMs: number;
   pricingUpdateUrl: string;
-  /** Apply Aliyun Bailian peak/off-peak (time-of-day) pricing. */
-  bailianPeakPricing: boolean;
 }
 
 /** Raw usage data from an assistant message in the JSONL transcript */

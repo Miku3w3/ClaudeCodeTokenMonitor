@@ -25,10 +25,15 @@
           "notes": "cacheHit from secondary source (unverified); cache writes billed as cache miss"
         },
         "deepseek-v4-pro": {
-          "cacheHit": 0,
-          "cacheMiss": 12,
-          "output": 24,
-          "verified": "bailian-2026-10-21"
+          "cacheHit": 0.3,
+          "cacheMiss": 9,
+          "output": 27,
+          "offPeak": {
+            "cacheHit": 0.15,
+            "cacheMiss": 4.5,
+            "output": 13.5
+          },
+          "verified": "deepseek-official-2026-10-21"
         },
         "deepseek-v4-pro-0813": {
           "cacheHit": 0,
@@ -799,7 +804,9 @@
       }
     }
   ],
-  "aliases": {},
+  "aliases": {
+    "deepseek-flash": "deepseek-v4.1-flash"
+  },
   "holidays": [
     "2024-01-01",
     "2024-02-10",
