@@ -127,7 +127,6 @@ Pull requests are welcome. Please run `npm test` before opening one.
 [MIT](LICENSE)
 
 ---
----
 
 # 简体中文
 
