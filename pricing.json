@@ -1001,6 +1001,24 @@
           "cacheMiss": 1,
           "output": 4,
           "verified": "auto-2026-10-21"
+        },
+        "ernie-5.0-thinking-preview": {
+          "cacheHit": 0,
+          "cacheMiss": 6,
+          "output": 24,
+          "verified": "auto-2026-10-21"
+        },
+        "ernie-5.0-thinking-latest": {
+          "cacheHit": 0,
+          "cacheMiss": 6,
+          "output": 24,
+          "verified": "auto-2026-10-21"
+        },
+        "ernie-5.0-thinking-exp": {
+          "cacheHit": 0,
+          "cacheMiss": 6,
+          "output": 24,
+          "verified": "auto-2026-10-21"
         }
       }
     },
