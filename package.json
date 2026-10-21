@@ -1,8 +1,8 @@
 {
   "name": "claude-code-token-monitor",
   "displayName": "Claude Code Token Monitor",
-  "description": "Real-time token usage, cost, and thinking time tracker for Claude Code. Supports DeepSeek, Anthropic, OpenAI, and custom model pricing. Multi-language UI with 11 languages.",
-  "version": "1.2.1",
+  "description": "Track Claude Code token usage, cost and context growth in real time — per message, per turn and across every session. Works with DeepSeek, Qwen, Anthropic, OpenAI and custom models. Offline-friendly pricing. 11 UI languages.",
+  "version": "1.3.0",
   "publisher": "miku3w3",
   "icon": "icon.png",
   "license": "MIT",
@@ -10,11 +10,35 @@
     "type": "git",
     "url": "https://github.com/Miku3w3/ClaudeCodeUsage"
   },
+  "homepage": "https://github.com/Miku3w3/ClaudeCodeUsage#readme",
+  "bugs": {
+    "url": "https://github.com/Miku3w3/ClaudeCodeUsage/issues"
+  },
+  "keywords": [
+    "claude code",
+    "token",
+    "token usage",
+    "cost",
+    "pricing",
+    "deepseek",
+    "bailian",
+    "qwen",
+    "anthropic",
+    "openai",
+    "budget",
+    "monitor",
+    "context window"
+  ],
+  "galleryBanner": {
+    "color": "#D97757",
+    "theme": "dark"
+  },
   "engines": {
     "vscode": "^1.90.0"
   },
   "categories": [
-    "Other"
+    "Other",
+    "Visualization"
   ],
   "activationEvents": [
     "onStartupFinished"
@@ -29,6 +53,10 @@
       {
         "command": "claudeCodeTokenMonitor.showDetailPanel",
         "title": "Show Token Usage Detail"
+      },
+      {
+        "command": "claudeCodeTokenMonitor.selectSession",
+        "title": "Select Session to Monitor"
       },
       {
         "command": "claudeCodeTokenMonitor.refresh",
@@ -56,7 +84,8 @@
         {
           "id": "claudeCodeTokenMonitor.detailPanel",
           "name": "Token Monitor",
-          "type": "webview"
+          "type": "webview",
+          "when": "config.claudeTokenMonitor.showPanelView"
         }
       ]
     },
@@ -185,7 +214,7 @@
         "claudeTokenMonitor.pricing.autoUpdate": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically check for pricing and exchange rate updates from GitHub."
+          "description": "Keep model pricing and exchange rates up to date automatically (checked on startup and every 6 hours; the catalog refreshes at most once a day)."
         },
         "claudeTokenMonitor.pricing.updateUrl": {
           "type": "string",
@@ -198,6 +227,11 @@
           "minimum": 1000,
           "maximum": 10000,
           "description": "How often (ms) to check the transcript file for new data."
+        },
+        "claudeTokenMonitor.showPanelView": {
+          "type": "boolean",
+          "default": false,
+          "description": "Show the Token Monitor tab in the bottom panel (Next to Problems/Output/Terminal). Disabled by default; the status-bar button opens the full dashboard in an editor tab."
         }
       }
     }
@@ -206,6 +240,7 @@
     "vscode:prepublish": "npm run compile",
     "compile": "tsc -p ./ && node copy-i18n.js",
     "watch": "tsc -watch -p ./",
+    "test": "npm run compile && node --test test/*.test.mjs",
     "lint": "echo 'No linter configured'",
     "package": "vsce package",
     "publish": "vsce publish"

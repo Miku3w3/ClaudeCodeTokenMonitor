@@ -18,7 +18,11 @@ export function getConfig(): ExtensionConfig {
   const resolvedCurr    = resolveCurrency(currencySetting, resolvedLang);
 
   const rawRates = cfg.get<Record<string, number>>('exchangeRates', {}) || {};
-  setCustomRates(rawRates);
+  // Only override the fetched rates when the user actually configured some.
+  // Passing {} here used to wipe the daily-updated rates on every config read.
+  if (Object.keys(rawRates).length > 0) {
+    setCustomRates(rawRates);
+  }
 
   return {
     language: langSetting,

@@ -1,563 +1,329 @@
 {
-  "version": 9,
-  "updatedAt": "2026-09-01",
-  "rates": {
-    "USD": 1,
-    "AED": 3.6725,
-    "AFN": 64.89916,
-    "ALL": 79.64232,
-    "AMD": 364.399135,
-    "ANG": 1.79,
-    "AOA": 927.94866,
-    "ARS": 1509.4686,
-    "AUD": 1.39586,
-    "AWG": 1.79,
-    "AZN": 1.707064,
-    "BAM": 1.684793,
-    "BBD": 2,
-    "BDT": 123.130489,
-    "BGN": 1.684793,
-    "BHD": 0.376,
-    "BIF": 3007.391267,
-    "BMD": 1,
-    "BND": 1.271828,
-    "BOB": 11.807625,
-    "BRL": 5.1794,
-    "BSD": 1,
-    "BTN": 95.209463,
-    "BWP": 13.600878,
-    "BYN": 3.062262,
-    "BZD": 2,
-    "CAD": 1.386295,
-    "CDF": 2292.035269,
-    "CHF": 0.808631,
-    "CLF": 0.023567,
-    "CLP": 931.50074,
-    "CNH": 6.718839,
-    "CNY": 6.736206,
-    "COP": 3192.157509,
-    "CRC": 451.940041,
-    "CUP": 24,
-    "CVE": 94.984601,
-    "CZK": 20.798843,
-    "DJF": 177.721,
-    "DKK": 6.446921,
-    "DOP": 58.913466,
-    "DZD": 133.341697,
-    "EGP": 50.870596,
-    "ERN": 15,
-    "ETB": 162.26423,
-    "EUR": 0.861401,
-    "FJD": 2.199689,
-    "FKP": 0.738309,
-    "FOK": 6.446918,
-    "GBP": 0.738359,
-    "GEL": 2.612743,
-    "GGP": 0.738309,
-    "GHS": 11.264487,
-    "GIP": 0.738309,
-    "GMD": 75.358321,
-    "GNF": 8784.865969,
-    "GTQ": 7.656723,
-    "GYD": 209.233879,
-    "HKD": 7.838803,
-    "HNL": 26.896309,
-    "HRK": 6.490378,
-    "HTG": 130.754905,
-    "HUF": 314.366912,
-    "IDR": 17738.595311,
-    "ILS": 2.989495,
-    "IMP": 0.738309,
-    "INR": 95.201365,
-    "IQD": 1312.522433,
-    "IRR": 1468820.322621,
-    "ISK": 121.38003,
-    "JEP": 0.738309,
-    "JMD": 158.65372,
-    "JOD": 0.709,
-    "JPY": 159.787727,
-    "KES": 129.450507,
-    "KGS": 87.510393,
-    "KHR": 4041.721398,
-    "KID": 1.39576,
-    "KMF": 423.791415,
-    "KRW": 1368.522936,
-    "KWD": 0.308801,
-    "KYD": 0.833333,
-    "KZT": 461.733033,
-    "LAK": 22317.724193,
-    "LBP": 89500,
-    "LKR": 327.839909,
-    "LRD": 180.861385,
-    "LSL": 16.115377,
-    "LYD": 6.337613,
-    "MAD": 9.292758,
-    "MDL": 17.286883,
-    "MGA": 4322.360637,
-    "MKD": 52.773712,
-    "MMK": 2101.587416,
-    "MNT": 3602.487532,
-    "MOP": 8.073791,
-    "MRU": 40.163053,
-    "MUR": 47.046989,
-    "MVR": 15.450306,
-    "MWK": 1744.053117,
-    "MXN": 17.00768,
-    "MYR": 4.027213,
-    "MZN": 63.595304,
-    "NAD": 16.115377,
-    "NGN": 1337.726971,
-    "NIO": 36.931568,
-    "NOK": 9.342104,
-    "NPR": 152.33514,
-    "NZD": 1.689836,
-    "OMR": 0.384497,
-    "PAB": 1,
-    "PEN": 3.366343,
-    "PGK": 4.462132,
-    "PHP": 62.441233,
-    "PKR": 277.701043,
-    "PLN": 3.729516,
-    "PYG": 5943.707049,
-    "QAR": 3.64,
-    "RON": 4.533569,
-    "RSD": 101.126288,
-    "RUB": 86.409515,
-    "RWF": 1477.076866,
-    "SAR": 3.75,
-    "SBD": 7.980296,
-    "SCR": 14.295697,
-    "SDG": 454.131504,
-    "SEK": 9.580693,
-    "SGD": 1.271737,
-    "SHP": 0.738309,
-    "SLE": 24.61411,
-    "SLL": 24614.110256,
-    "SOS": 571.963487,
-    "SRD": 37.813665,
-    "SSP": 5844.284008,
-    "STN": 21.104818,
-    "SYP": 121.719956,
-    "SZL": 16.115377,
-    "THB": 33.163368,
-    "TJS": 9.234445,
-    "TMT": 3.500076,
-    "TND": 2.908953,
-    "TOP": 2.382525,
-    "TRY": 48.275416,
-    "TTD": 6.816835,
-    "TVD": 1.39576,
-    "TWD": 31.69974,
-    "TZS": 2641.874099,
-    "UAH": 44.578681,
-    "UGX": 3714.440096,
-    "UYU": 40.411669,
-    "UZS": 11816.971828,
-    "VES": 798.326,
-    "VND": 26010.618199,
-    "VUV": 117.934968,
-    "WST": 2.679352,
-    "XAF": 565.055221,
-    "XCD": 2.7,
-    "XCG": 1.79,
-    "XDR": 0.731114,
-    "XOF": 565.055221,
-    "XPF": 102.795106,
-    "YER": 236.711077,
-    "ZAR": 16.115226,
-    "ZMW": 19.029388,
-    "ZWG": 26.6663,
-    "ZWL": 26.6663
-  },
+  "schemaVersion": 2,
+  "updatedAt": "2026-10-21",
+  "source": "builtin+official",
   "providers": [
     {
-      "name": "DeepSeek",
-      "currency": "CNY",
+      "id": "aliyun-bailian",
+      "name": "Aliyun Bailian",
+      "nativeCurrency": "CNY",
+      "aliases": {
+        "deepseek-v4.1-flash-1017": "deepseek-v4.1-flash",
+        "deepseek-v4.1-flash-1017-1m": "deepseek-v4.1-flash"
+      },
       "models": {
-        "deepseek-v4-flash": {
-          "input": {
-            "cacheHit": 0.0028,
-            "cacheMiss": 0.14
+        "deepseek-v4.1-flash": {
+          "cacheHit": 0.04,
+          "cacheMiss": 2,
+          "output": 8,
+          "offPeak": {
+            "cacheHit": 0.02,
+            "cacheMiss": 1,
+            "output": 4
           },
-          "output": 0.28
+          "verified": "bailian-2026-10-21",
+          "notes": "cacheHit from secondary source (unverified); cache writes billed as cache miss"
         },
         "deepseek-v4-pro": {
-          "input": {
-            "cacheHit": 0.003625,
-            "cacheMiss": 0.435
+          "cacheHit": 0,
+          "cacheMiss": 12,
+          "output": 24,
+          "verified": "bailian-2026-10-21"
+        },
+        "deepseek-v4-pro-0813": {
+          "cacheHit": 0,
+          "cacheMiss": 9,
+          "output": 27,
+          "offPeak": {
+            "cacheHit": 0,
+            "cacheMiss": 4.5,
+            "output": 13.5
           },
-          "output": 0.87
+          "verified": "bailian-2026-10-21"
+        },
+        "deepseek-v4-flash-0731": {
+          "cacheHit": 0,
+          "cacheMiss": 3,
+          "output": 9,
+          "offPeak": {
+            "cacheHit": 0,
+            "cacheMiss": 1.5,
+            "output": 4.5
+          },
+          "verified": "bailian-2026-10-21"
+        },
+        "qwen3.5-plus": {
+          "cacheHit": 0,
+          "cacheMiss": 0.8,
+          "output": 4.8
+        },
+        "qwen3.5-flash": {
+          "cacheHit": 0,
+          "cacheMiss": 0.2,
+          "output": 2
+        },
+        "qwen-long": {
+          "cacheHit": 0,
+          "cacheMiss": 0.5,
+          "output": 2
         }
       }
     },
     {
+      "id": "anthropic",
       "name": "Anthropic",
-      "currency": "USD",
+      "nativeCurrency": "USD",
       "models": {
-        "fable": {
-          "input": 10,
+        "claude-fable-5-1": {
+          "cacheHit": 1,
+          "cacheMiss": 10,
           "output": 50,
-          "prompt_caching_write": 12.5,
-          "prompt_caching_read": 1
+          "cacheWrite": 12.5
         },
-        "opus": {
-          "input": 5,
+        "claude-fable-5": {
+          "cacheHit": 1,
+          "cacheMiss": 10,
+          "output": 50,
+          "cacheWrite": 12.5
+        },
+        "claude-opus-5-5": {
+          "cacheHit": 0.4,
+          "cacheMiss": 4,
+          "output": 20,
+          "cacheWrite": 5
+        },
+        "claude-opus-5": {
+          "cacheHit": 0.5,
+          "cacheMiss": 5,
           "output": 25,
-          "prompt_caching_write": 6.25,
-          "prompt_caching_read": 0.5
+          "cacheWrite": 6.25
         },
-        "sonnet": {
-          "input": 2,
+        "claude-sonnet-5-5": {
+          "cacheHit": 0.2,
+          "cacheMiss": 2,
           "output": 10,
-          "prompt_caching_write": 2.5,
-          "prompt_caching_read": 0.2
+          "cacheWrite": 2.5
         },
-        "haiku": {
-          "input": 1,
-          "output": 5,
-          "prompt_caching_write": 1.25,
-          "prompt_caching_read": 0.1
+        "claude-sonnet-5": {
+          "cacheHit": 0.2,
+          "cacheMiss": 2,
+          "output": 10,
+          "cacheWrite": 2.5
         },
-        "opus_4.8": {
-          "input": 5,
-          "output": 25,
-          "prompt_caching_write": 6.25,
-          "prompt_caching_read": 0.5
+        "claude-haiku-5-5": {
+          "cacheHit": 0.01,
+          "cacheMiss": 0.1,
+          "output": 0.5,
+          "cacheWrite": 0.125
         },
-        "sonnet_4.6": {
-          "input": 3,
-          "output": 15,
-          "prompt_caching_write": 3.75,
-          "prompt_caching_read": 0.3
-        },
-        "opus_4.7": {
-          "input": 5,
-          "output": 25,
-          "prompt_caching_write": 6.25,
-          "prompt_caching_read": 0.5
-        },
-        "opus_4.6": {
-          "input": 5,
-          "output": 25,
-          "prompt_caching_write": 6.25,
-          "prompt_caching_read": 0.5
-        },
-        "sonnet_4.5": {
-          "input": 3,
-          "output": 15,
-          "prompt_caching_write": 3.75,
-          "prompt_caching_read": 0.3
-        },
-        "opus_4.5": {
-          "input": 5,
-          "output": 25,
-          "prompt_caching_write": 6.25,
-          "prompt_caching_read": 0.5
-        },
-        "opus_4.1": {
-          "input": 15,
+        "claude-opus-4-8": {
+          "cacheHit": 1.5,
+          "cacheMiss": 15,
           "output": 75,
-          "prompt_caching_write": 18.75,
-          "prompt_caching_read": 1.5
+          "cacheWrite": 18.75
+        },
+        "claude-sonnet-4-6": {
+          "cacheHit": 0.6,
+          "cacheMiss": 6,
+          "output": 30,
+          "cacheWrite": 7.5
+        },
+        "claude-haiku-4-5": {
+          "cacheHit": 0.15,
+          "cacheMiss": 1.5,
+          "output": 7.5,
+          "cacheWrite": 1.875
         }
       }
     },
     {
+      "id": "openai",
       "name": "OpenAI",
-      "currency": "USD",
+      "nativeCurrency": "USD",
       "models": {
-        "gpt-4o": {
-          "input": 2.5,
+        "gpt-6.1-sol": {
+          "cacheHit": 0.2,
+          "cacheMiss": 2,
           "output": 10,
+          "verified": "openrouter-2026-10-21"
+        },
+        "gpt-6-sol": {
+          "cacheHit": 0.2,
+          "cacheMiss": 2,
+          "output": 10,
+          "verified": "openrouter-2026-10-21"
+        },
+        "gpt-6-astra": {
+          "cacheHit": 1,
+          "cacheMiss": 10,
+          "output": 50,
+          "verified": "openrouter-2026-10-21"
+        },
+        "gpt-6-luna": {
+          "cacheHit": 0.01,
+          "cacheMiss": 0.1,
+          "output": 0.5,
+          "verified": "openrouter-2026-10-21"
+        },
+        "gpt-5.6-terra": {
+          "cacheHit": 0.2,
+          "cacheMiss": 2,
+          "output": 12,
+          "verified": "openrouter-2026-10-21"
+        },
+        "gpt-5.6-sol": {
+          "cacheHit": 0.4,
+          "cacheMiss": 4,
+          "output": 20,
+          "verified": "openrouter-2026-10-21"
+        },
+        "gpt-5.6-luna": {
+          "cacheHit": 0.02,
+          "cacheMiss": 0.2,
+          "output": 1.2,
+          "verified": "openrouter-2026-10-21"
+        },
+        "gpt-5.5": {
+          "cacheHit": 0.5,
+          "cacheMiss": 5,
+          "output": 30
+        },
+        "gpt-5.5-pro": {
+          "cacheHit": 3,
+          "cacheMiss": 30,
+          "output": 180
+        },
+        "gpt-4o": {
           "cacheHit": 1.25,
-          "cacheMiss": 2.5
+          "cacheMiss": 2.5,
+          "output": 10
         },
         "gpt-4o-mini": {
-          "input": 0.15,
-          "output": 0.6,
           "cacheHit": 0.075,
-          "cacheMiss": 0.15
-        },
-        "gpt-4-turbo": {
-          "input": 10,
-          "output": 30,
-          "cacheHit": 10,
-          "cacheMiss": 10
-        },
-        "gpt-4": {
-          "input": 30,
-          "output": 60,
-          "cacheHit": 30,
-          "cacheMiss": 30
-        },
-        "gpt-3.5-turbo": {
-          "input": 0.5,
-          "output": 1.5,
-          "cacheHit": 0.5,
-          "cacheMiss": 0.5
-        },
-        "o1": {
-          "input": 15,
-          "output": 60,
-          "cacheHit": 0,
-          "cacheMiss": 15
-        },
-        "o1-mini": {
-          "input": 3,
-          "output": 12,
-          "cacheHit": 0,
-          "cacheMiss": 3
-        },
-        "o3": {
-          "input": 2,
-          "output": 8,
-          "cacheHit": 0,
-          "cacheMiss": 2
-        },
-        "o3-mini": {
-          "input": 1.1,
-          "output": 4.4,
-          "cacheHit": 0,
-          "cacheMiss": 1.1
-        },
-        "o4-mini": {
-          "input": 1.1,
-          "output": 4.4,
-          "cacheHit": 0,
-          "cacheMiss": 1.1
-        }
-      }
-    },
-    {
-      "name": "Google",
-      "currency": "USD",
-      "models": {
-        "gemini-2.5-pro": {
-          "cacheHit": 1.25,
-          "cacheMiss": 5,
-          "output": 15
-        },
-        "gemini-2.5-flash": {
-          "cacheHit": 0.1,
-          "cacheMiss": 0.4,
-          "output": 1.6
-        },
-        "gemini-2.0-flash": {
-          "cacheHit": 0.1,
-          "cacheMiss": 0.4,
-          "output": 1.6
-        },
-        "gemini-2.0-flash-lite": {
-          "cacheHit": 0.025,
-          "cacheMiss": 0.1,
-          "output": 0.4
-        },
-        "gemini-1.5-pro": {
-          "cacheHit": 0.625,
-          "cacheMiss": 2.5,
-          "output": 7.5
-        },
-        "gemini-1.5-flash": {
-          "cacheHit": 0.0375,
           "cacheMiss": 0.15,
           "output": 0.6
         },
-        "gemini-1.5-flash-8b": {
-          "cacheHit": 0.025,
-          "cacheMiss": 0.1,
-          "output": 0.4
+        "gpt-4.1": {
+          "cacheHit": 1.25,
+          "cacheMiss": 2.5,
+          "output": 10
         }
       }
     },
     {
-      "name": "Alibaba Qwen",
-      "currency": "CNY",
+      "id": "google",
+      "name": "Google",
+      "nativeCurrency": "USD",
       "models": {
-        "qwen3.5": {
-          "cacheHit": 0,
-          "cacheMiss": 0.6,
-          "output": 3.6
-        },
-        "qwen3.5 plus": {
-          "cacheHit": 0,
-          "cacheMiss": 0.4,
-          "output": 2.4
-        },
-        "qwen3.5 flash": {
-          "cacheHit": 0,
-          "cacheMiss": 0.1,
-          "output": 0.4
-        },
-        "qwen3 max": {
+        "gemini-2.5-pro": {
           "cacheHit": 0,
           "cacheMiss": 1.25,
-          "output": 3.75
+          "output": 10
         },
-        "qwen-turbo": {
+        "gemini-2.5-flash": {
           "cacheHit": 0,
-          "cacheMiss": 0.3,
+          "cacheMiss": 0.15,
           "output": 0.6
         }
       }
     },
     {
+      "id": "moonshot",
       "name": "Moonshot Kimi",
-      "currency": "USD",
+      "nativeCurrency": "USD",
       "models": {
-        "kimi-k1.5": {
-          "cacheHit": 0.5,
-          "cacheMiss": 2,
-          "output": 8
-        },
-        "kimi-k1.5-long-context": {
-          "cacheHit": 0.5,
-          "cacheMiss": 2,
-          "output": 8
-        },
-        "kimi-k2": {
-          "cacheHit": 0.5,
-          "cacheMiss": 2,
-          "output": 8
-        },
-        "kimi-k2-turbo": {
-          "cacheHit": 0.25,
-          "cacheMiss": 1,
-          "output": 4
-        }
-      }
-    },
-    {
-      "name": "Zhipu GLM",
-      "currency": "CNY",
-      "models": {
-        "glm-4": 0.1,
-        "glm-4v": 0.1,
-        "glm-3-turbo": 0.05,
-        "glm-4-air": 0.01,
-        "glm-4-airx": 0.01,
-        "glm-4-long": 0.001,
-        "glm-4-flash": 0.001,
-        "glm-4v-flash": 0.001
-      }
-    },
-    {
-      "name": "ByteDance Doubao",
-      "currency": "CNY",
-      "models": {
-        "doubao-pro-32k": {
-          "cacheHit": 0.8,
-          "cacheMiss": 2,
-          "output": 8
-        },
-        "doubao-pro-128k": {
-          "cacheHit": 1.6,
-          "cacheMiss": 4,
-          "output": 12
-        },
-        "doubao-pro-256k": {
-          "cacheHit": 2.4,
-          "cacheMiss": 6,
-          "output": 16
-        },
-        "doubao-lite-32k": {
-          "cacheHit": 0.2,
-          "cacheMiss": 0.5,
-          "output": 2
-        },
-        "doubao-lite-128k": {
-          "cacheHit": 0.4,
-          "cacheMiss": 1,
-          "output": 4
-        }
-      }
-    },
-    {
-      "name": "Baidu Ernie",
-      "currency": "CNY",
-      "models": {
-        "ernie-4.0-turbo-8k": 0,
-        "ernie-4.0-turbo-128k": 0,
-        "ernie-4.0-8k": 0,
-        "ernie-4.0-128k": 0,
-        "ernie-3.5-8k": 0,
-        "ernie-3.5-128k": 0,
-        "ernie-speed-8k": 0,
-        "ernie-speed-128k": 0,
-        "ernie-lite-8k": 0,
-        "ernie-tiny-8k": 0,
-        "ernie-char-8k": 0,
-        "ernie-novel-8k": 0,
-        "ernie-function-calling-8k": 0,
-        "ernie-4.0-turbo-preview-8k": 0,
-        "ernie-4.0-turbo-preview-128k": 0,
-        "ernie-4.0-preview-8k": 0,
-        "ernie-4.0-preview-128k": 0,
-        "ernie-3.5-preview-8k": 0,
-        "ernie-3.5-preview-128k": 0,
-        "ernie-speed-preview-8k": 0,
-        "ernie-speed-preview-128k": 0,
-        "ernie-lite-preview-8k": 0,
-        "ernie-tiny-preview-8k": 0,
-        "ernie-char-preview-8k": 0,
-        "ernie-novel-preview-8k": 0,
-        "ernie-function-calling-preview-8k": 0
-      }
-    },
-    {
-      "name": "xAI Grok",
-      "currency": "USD",
-      "models": {
-        "grok_4_5": {
-          "input": null,
-          "output": null
-        }
-      }
-    },
-    {
-      "name": "Mistral",
-      "currency": "USD",
-      "models": {
-        "mistral-large-latest": {
-          "cacheHit": 0.5,
-          "cacheMiss": 2,
-          "output": 6
-        },
-        "mistral-small-latest": {
+        "kimi-k2.5": {
           "cacheHit": 0.1,
-          "cacheMiss": 0.2,
-          "output": 0.6
-        },
-        "mistral-moderation-latest": {
-          "cacheHit": 0,
-          "cacheMiss": 0.1,
-          "output": 0.1
-        },
-        "mistral-embed": {
-          "cacheHit": 0,
-          "cacheMiss": 0.1,
-          "output": 0.1
-        },
-        "codestral-latest": {
-          "cacheHit": 0.2,
-          "cacheMiss": 1,
+          "cacheMiss": 0.6,
           "output": 3
         },
-        "pixtral-large-latest": {
-          "cacheHit": 0.5,
+        "kimi-k2.6": {
+          "cacheHit": 0.16,
+          "cacheMiss": 0.95,
+          "output": 4
+        }
+      }
+    },
+    {
+      "id": "zhipu",
+      "name": "Zhipu GLM",
+      "nativeCurrency": "CNY",
+      "models": {
+        "glm-4.7": {
+          "cacheHit": 0,
+          "cacheMiss": 2,
+          "output": 16
+        },
+        "glm-5": {
+          "cacheHit": 0,
+          "cacheMiss": 4,
+          "output": 18
+        }
+      }
+    },
+    {
+      "id": "bytedance",
+      "name": "ByteDance Doubao",
+      "nativeCurrency": "CNY",
+      "models": {
+        "doubao-seed-1.8": {
+          "cacheHit": 0,
+          "cacheMiss": 0.8,
+          "output": 2
+        },
+        "doubao-seed-2.0-pro": {
+          "cacheHit": 0,
+          "cacheMiss": 3.2,
+          "output": 16
+        }
+      }
+    },
+    {
+      "id": "baidu",
+      "name": "Baidu Ernie",
+      "nativeCurrency": "CNY",
+      "models": {
+        "ernie-4.5-turbo": {
+          "cacheHit": 0.2,
+          "cacheMiss": 0.8,
+          "output": 3.2
+        },
+        "ernie-5.1": {
+          "cacheHit": 0,
+          "cacheMiss": 4,
+          "output": 18
+        }
+      }
+    },
+    {
+      "id": "xai",
+      "name": "xAI Grok",
+      "nativeCurrency": "USD",
+      "models": {
+        "grok-4": {
+          "cacheHit": 0,
+          "cacheMiss": 2,
+          "output": 8
+        }
+      }
+    },
+    {
+      "id": "mistral",
+      "name": "Mistral",
+      "nativeCurrency": "USD",
+      "models": {
+        "mistral-large": {
+          "cacheHit": 0,
           "cacheMiss": 2,
           "output": 6
         },
-        "ministral-3b-latest": {
-          "cacheHit": 0.04,
-          "cacheMiss": 0.04,
-          "output": 0.04
-        },
-        "ministral-8b-latest": {
-          "cacheHit": 0.1,
-          "cacheMiss": 0.1,
-          "output": 0.1
+        "mistral-small": {
+          "cacheHit": 0,
+          "cacheMiss": 0.2,
+          "output": 0.6
         }
       }
     }
-  ]
+  ],
+  "aliases": {}
 }

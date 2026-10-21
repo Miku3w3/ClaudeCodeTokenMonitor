@@ -5,9 +5,13 @@
 export {
   normalizeModelName,
   calculateCost,
+  calculateCostDetail,
   formatCost,
   abbreviateTokens,
   resolvePricing,
   convertCurrency,
   setCustomProviders,
+  setPricingCatalog,
+  getPricingCatalog,
+  isBailianOffPeak,
 } from './pricing';

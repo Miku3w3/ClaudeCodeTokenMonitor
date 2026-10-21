@@ -59,6 +59,16 @@ export interface ParsedEvent {
   sessionId: string;
   /** True if this is a real user message (not a tool_result) */
   isRealUserMessage: boolean;
+  /** For assistant events: the API message id (shared by all streaming snapshots) */
+  messageId?: string;
+  /** For all events: working directory recorded on the line (preferred over decoding the folder name) */
+  cwd?: string;
+  /** For all events: session slug, used as a title fallback */
+  slug?: string;
+  /** For subagent transcript lines: the agent that produced this line */
+  agentId?: string;
+  /** For subagent transcript lines: Claude Code marks them as sidechains */
+  isSidechain?: boolean;
   /** For assistant events: the token usage */
   usage?: TokenUsage;
   /** For assistant events: the model name */
@@ -70,6 +80,8 @@ export interface ParsedEvent {
 /** Per-message statistics (computed from ParsedEvent) */
 export interface PerMessageStats {
   uuid: string;
+  /** API message id; all streaming snapshots of one response share it */
+  messageId?: string;
   timestamp: string;
   isUserMessage: boolean;
   inputTokens: number;
@@ -77,11 +89,26 @@ export interface PerMessageStats {
   cacheReadTokens: number;
   cacheCreationTokens: number;
   model: string;
+  /** Cost in CNY (converted at calculation time) */
   costCNY: number;
+  /** Cost in the provider's native currency */
+  costNative?: number;
+  /** Native currency of the provider */
+  costCurrency?: string;
+  /** True when a pricing entry was found for the model */
+  costKnown?: boolean;
+  /** Cost converted to the user's display currency (filled in before sending to the webview) */
+  costDisplay?: number;
   /** Wall-clock delta (ms) from preceding event to this assistant response */
   thinkingTimeMs: number | null;
   /** Accumulated AI working time (ms) within the current turn up to this message */
   turnAiTimeMs?: number;
+  /** Where this message came from: the main transcript or a subagent transcript */
+  source?: 'main' | 'subagent';
+  /** Subagent id parsed from agent-<id>.jsonl (undefined for main-agent rows) */
+  agentId?: string;
+  /** Short label shown in the webview (currently the first 8 chars of agentId) */
+  agentLabel?: string;
 }
 
 /** Aggregated session state held in TokenStore */
@@ -167,20 +194,44 @@ export interface ModelPricing {
   cacheHit: number;
   cacheMiss: number;
   output: number;
+  /** Cache-write price per 1M tokens (falls back to cacheMiss when absent) */
+  cacheWrite?: number;
+  /** Off-peak tier, when the provider offers one (e.g. Aliyun Bailian) */
+  offPeak?: { cacheHit: number; cacheMiss: number; output: number; cacheWrite?: number };
+  /** Where the numbers came from, e.g. "bailian-2026-10-21" */
+  verified?: string;
+  notes?: string;
 }
 
 /** Pricing resolved for the current model, including currency info */
 export interface ResolvedPricing extends ModelPricing {
   currency: Currency;
   providerName: string;
+  /** Stable provider id (e.g. "aliyun-bailian") */
+  providerId?: string;
+  /** Canonical model key that matched */
+  matchedModel: string;
 }
 
 /** Pricing provider metadata */
 export interface ProviderMeta {
+  id?: string;
   name: string;
   nativeCurrency: Currency;
   models: Record<string, ModelPricing>;
   matchPattern: RegExp;
+  /** Exact alias → canonical model key (e.g. dated snapshot names) */
+  aliases?: Record<string, string>;
+}
+
+/** Pricing catalog loaded from bundled pricing.json or a remote update */
+export interface PricingCatalog {
+  schemaVersion: number;
+  updatedAt?: string;
+  source?: string;
+  providers: ProviderMeta[];
+  /** Global aliases applied before prefix matching */
+  aliases?: Record<string, string>;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -202,8 +253,14 @@ export interface SessionIndexEntry {
   totalOutputTokens: number;
   totalCacheHitTokens: number;
   totalCacheMissTokens: number;
+  totalCacheCreationTokens?: number;
   totalCostCNY: number;
   primaryModel: string;    // most-used model in this session
+  /** Slug from the transcript, used when no title is available */
+  slug?: string;
+  /** Size/mtime of the main transcript file when the index entry was built */
+  fileSize?: number;
+  fileMtimeMs?: number;
 }
 
 /** Full session index persisted to ~/.claude/token-tracker/sessions.json */

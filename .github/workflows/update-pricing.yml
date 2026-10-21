@@ -1,12 +1,28 @@
-name: Auto-Update AI Model Pricing
+name: Daily Model Pricing Update
+
 on:
   schedule:
-    - cron: '0 0 1 * *'
+    # Daily at 03:17 UTC (11:17 Beijing). Off the hour to avoid runner congestion.
+    - cron: '17 3 * * *'
   workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: pricing-update
+  cancel-in-progress: false
 
 jobs:
   update:
     runs-on: ubuntu-latest
+    env:
+      BAILIAN_API_KEY: ${{ secrets.BAILIAN_API_KEY }}
+      DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -17,20 +33,48 @@ jobs:
         with:
           node-version: '22'
 
-      - name: Run AI pricing updater
-        env:
-          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+      - name: Validate the committed catalog
+        run: node scripts/update-pricing.js --validate
+
+      - name: Skip notice when no AI key is configured
+        if: ${{ env.BAILIAN_API_KEY == '' && env.DEEPSEEK_API_KEY == '' && env.OPENAI_API_KEY == '' && env.ANTHROPIC_API_KEY == '' }}
+        run: echo "::notice::No pricing AI key configured. Add BAILIAN_API_KEY (or DEEPSEEK/OPENAI/ANTHROPIC) to enable the daily update."
+
+      - name: Update pricing
+        if: ${{ env.BAILIAN_API_KEY != '' || env.DEEPSEEK_API_KEY != '' || env.OPENAI_API_KEY != '' || env.ANTHROPIC_API_KEY != '' }}
         run: node scripts/update-pricing.js
 
-      - name: Commit and push changes
+      - name: Validate the updated catalog
+        if: ${{ env.BAILIAN_API_KEY != '' || env.DEEPSEEK_API_KEY != '' || env.OPENAI_API_KEY != '' || env.ANTHROPIC_API_KEY != '' }}
+        run: node scripts/update-pricing.js --validate
+
+      - name: Open or refresh the pricing pull request
+        if: ${{ env.BAILIAN_API_KEY != '' || env.DEEPSEEK_API_KEY != '' || env.OPENAI_API_KEY != '' || env.ANTHROPIC_API_KEY != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          if git diff --quiet -- pricing.json; then
+            echo "No pricing changes today."
+            exit 0
+          fi
+          branch="chore/daily-pricing"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$branch"
           git add pricing.json
-          if git diff --staged --quiet; then
-            echo "No changes to commit"
-          else
-            git commit -m "chore: auto-update AI model pricing"
-            git pull --rebase origin master
-            git push origin master
-          fi
+          git commit -m "chore: daily model pricing update ($(date -u +%F))"
+          git push -f origin "$branch"
+          cat > /tmp/pr-body.md <<'BODY'
+          Automated update of `pricing.json` produced by `scripts/update-pricing.js`.
+
+          Review checklist:
+          - [ ] Price changes look like real official list prices
+          - [ ] New models were actually released (not hallucinated)
+          - [ ] Bailian peak/off-peak values in `pricing-overrides.json` are still correct
+
+          The updater already rejects implausible jumps (>5x) and keeps existing prices when a provider fails.
+          BODY
+          gh pr create --head "$branch" --base master \
+            --title "chore: daily model pricing update" \
+            --body-file /tmp/pr-body.md \
+            || echo "Pull request already open — branch refreshed."

@@ -1,0 +1,44 @@
+{
+  "aliyun-bailian": {
+    "deepseek-v4.1-flash": {
+      "cacheHit": 0.04,
+      "cacheMiss": 2,
+      "output": 8,
+      "offPeak": {
+        "cacheHit": 0.02,
+        "cacheMiss": 1,
+        "output": 4
+      },
+      "verified": "bailian-2026-10-21",
+      "notes": "cacheHit from secondary source (unverified); cache writes billed as cache miss"
+    },
+    "deepseek-v4-pro": {
+      "cacheHit": 0,
+      "cacheMiss": 12,
+      "output": 24,
+      "verified": "bailian-2026-10-21"
+    },
+    "deepseek-v4-pro-0813": {
+      "cacheHit": 0,
+      "cacheMiss": 9,
+      "output": 27,
+      "offPeak": {
+        "cacheHit": 0,
+        "cacheMiss": 4.5,
+        "output": 13.5
+      },
+      "verified": "bailian-2026-10-21"
+    },
+    "deepseek-v4-flash-0731": {
+      "cacheHit": 0,
+      "cacheMiss": 3,
+      "output": 9,
+      "offPeak": {
+        "cacheHit": 0,
+        "cacheMiss": 1.5,
+        "output": 4.5
+      },
+      "verified": "bailian-2026-10-21"
+    }
+  }
+}

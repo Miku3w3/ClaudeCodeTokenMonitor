@@ -1,129 +1,202 @@
 # Claude Code Token Monitor
 
-[English](#english) | [中文](#中文)
+[![Marketplace](https://img.shields.io/badge/VS%20Marketplace-v1.3.0-007ACC?logo=visualstudiocode&logoColor=white)](https://marketplace.visualstudio.com/items?itemName=miku3w3.claude-code-token-monitor)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+[![VS Code](https://img.shields.io/badge/VS%20Code-%E2%89%A51.90-007ACC)](https://code.visualstudio.com/)
+
+**English** · [简体中文](#简体中文)
+
+Know what every Claude Code conversation actually costs — in the status bar, per message, per turn, and across every session on your machine.
+
+Claude Code writes a JSONL transcript for every session. This extension reads those files locally and turns them into live token and cost numbers. No API keys, no telemetry, no network required for the core features.
+
+```
+$(pulse) Fix auth bug | deepseek-v4.1-flash | AI 3.2s | 85K ¥0.012 | total 1.2M ¥0.19
+```
 
 ---
 
-## 中文
+## Features
 
-一款 VSCode 扩展，在状态栏实时显示 Claude Code 对话的 token 用量、费用和思考时间。
+| | |
+|---|---|
+| **Live status bar** | Session title, current model, turn AI time, turn tokens/cost and cumulative totals. Hover for the full breakdown: input, cache hits, cache misses, output, hit rate. |
+| **Per-message table** | Every API response with its own token counts, cache usage, duration and cost. De-duplicated by `message.id`, so streamed snapshots are never counted twice. |
+| **Sessions dashboard** | Current day / week / month / year / all time, grouped by model when you need it. The full dashboard opens in an editor tab from the status-bar button; the bottom-panel view is opt-in. |
+| **Session picker** | Follow any recorded session, not only the newest one. Subagent transcripts are included in both live and historical totals. |
+| **Accurate pricing** | 40+ models from Anthropic, OpenAI, Google, Alibaba Bailian (DeepSeek + Qwen), Moonshot, Zhipu, ByteDance, Baidu, xAI and Mistral. Bailian peak/off-peak pricing is applied automatically. |
+| **Offline-first** | Prices ship inside the extension. Updates are optional and fetched from mirror hosts that work behind restrictive networks. |
+| **Custom models** | Add your own provider or private deployment from the command palette — no JSON editing. |
+| **11 languages · 7 currencies** | en, zh-CN, zh-TW, ja, ko, es, ar, pt, de, fr, ru · CNY, USD, EUR, JPY, KRW, GBP, auto. |
+| **Budget warning** | Get a nudge when the cumulative cost passes a threshold you set. |
 
-### 功能
+## Quick start
 
-- **实时状态栏监控** — 显示会话标题、本轮 AI 耗时、本轮 token/费用、累计用量。悬停 Tooltip 查看完整分解：总输入 / 缓存命中 / 未命中 / 输出 / 命中率 / 思考时间
-- **本轮 AI 耗时** — 统计当前对话轮次中 AI 实际工作的总时间，自动排除等待工具授权和用户输入的空闲时间
-- **时间范围筛选** — 当前会话 / 每天 / 每周 / 每月 / 每年 / 全部，按逐条消息时间戳精确聚合
-- **会话选择器** — 浏览所有过往会话，点击查看完整消息记录和分模型统计
-- **按模型分组** — 一键切换，按 AI 模型拆分费用和 token 统计
-- **多供应商定价** — 内置 11 家供应商 28+ 模型：DeepSeek · Anthropic · OpenAI · Gemini · Qwen · Kimi · GLM · Doubao · Ernie · Grok · Mistral
-- **自动更新定价与汇率** — 汇率每日从 open.er-api.com 获取（免费，无需 key），模型定价每月通过 GitHub Actions 自动抓取更新
-- **11 种语言** — en / zh-CN / zh-TW / ja / ko / es / ar / pt / de / fr / ru，切换语言时 webview 按钮实时更新无需重载
-- **7 种货币** — CNY / USD / EUR / JPY / KRW / GBP + 自动检测
-- **预算告警** — 累计费用超过阈值自动提示
-- **自定义模型** — 命令面板引导添加，无需手写 JSON
-- **零依赖，纯本地** — 不上传任何数据，除可选定价更新外完全离线
+1. Install **Claude Code Token Monitor** from the VS Code Marketplace.
+2. Use Claude Code as usual — the status bar starts updating within a few seconds.
+3. Click the status bar item to open the dashboard.
+4. Optional: `Ctrl+Shift+P` → **Claude Code Token Monitor: Select Session to Monitor** to follow an older session.
 
-### 状态栏格式
+The extension activates on startup and reads `~/.claude/projects/**/*.jsonl` (or `%USERPROFILE%\.claude\projects` on Windows). Nothing else is required.
 
-| 模式 | 示例 |
-|------|------|
-| 完整 | `📊 标题… \| AI耗时 3.2s \| 85K ¥0.012 \| 累计 1.2M ¥0.19` |
-| 完整+模型 | `📊 标题… \| deepseek-v4-pro \| AI耗时 3.2s \| 85K ¥0.012 \| 累计 1.2M ¥0.19` |
-| 紧凑 | `📊 标题… \| 1.2M ¥0.19` |
+> **Want it in the bottom panel?** Set `claudeTokenMonitor.showPanelView` to `true`. It is off by default so the Problems/Output/Terminal area stays clean.
 
-### 设置
+## How token counting works
 
-Ctrl+, → 搜索 `claudeTokenMonitor`：
+Claude Code streams several snapshots of the same assistant message into the transcript, and the last snapshot is not always the complete one. Summing every line overcounts by roughly an order of magnitude. This extension instead:
 
-| 配置项 | 说明 | 默认值 |
-|--------|------|--------|
-| `language` | UI 语言 | auto |
-| `currency` | 显示货币 | auto |
-| `pollIntervalMs` | 检测间隔（毫秒） | 2000 |
-| `statusBar.showModelName` | 在状态栏显示模型名称 | false |
-| `statusBar.compactMode` | 紧凑模式 | false |
-| `budgetWarning` | 预算告警阈值（0=关闭） | 0 |
-| `customModels` | 自定义模型定价 | [] |
-| `pricing.autoUpdate` | 自动更新定价和汇率 | true |
+1. groups lines by `message.id`;
+2. keeps the snapshot with the highest `output_tokens` (richer cache data breaks ties);
+3. counts that snapshot once, at the position of the winning line;
+4. treats missing cache fields as `0` and never emits `NaN`.
 
-### 命令
+## Pricing
 
-| 命令 | 说明 |
-|------|------|
-| `Show Token Usage Detail` | 打开 Token 监控详情面板 |
-| `Show Last Message Cost` | 显示上一条消息的费用 |
-| `Open Token Monitor Settings` | 打开设置 |
-| `Refresh Token Data` | 手动刷新数据 |
-| `Add Custom Model Pricing` | 添加自定义模型定价 |
-| `Manage Custom Models` | 管理自定义模型 |
-| `Force Refresh Pricing Data` | 强制刷新定价数据 |
+- **Bundled catalog** — `pricing.json` ships with every release, so costs are correct offline.
+- **Daily updates** — a GitHub Action refreshes the catalog once a day and opens a pull request. Each provider is merged, never replaced: a failed scrape keeps yesterday's prices, and any change larger than 5× is rejected as a parsing error.
+- **Human-reviewed overrides** — `pricing-overrides.json` holds prices checked by hand (for example Bailian peak/off-peak rates) and always wins over automated data.
+- **Unknown models** — shown as `—` rather than guessed. Add a custom model if you use a private deployment.
+- **Peak hours** — Alibaba Bailian charges different rates on Beijing workdays 09:00–12:00 and 14:00–18:00; the extension picks the right rate from each message timestamp.
 
-### 前提
+## Settings
 
-- VSCode ≥ 1.90
-- Claude Code 已安装
-
----
-
-## English
-
-A VSCode extension that displays real-time token usage, cost, and thinking time for Claude Code sessions in the status bar.
-
-### Features
-
-- **Real-time status bar** — session title, turn AI time, per-turn tokens/cost, cumulative total. Hover tooltip with full breakdown: total input, cache hit/miss, output, hit rate, think time
-- **Turn AI time** — tracks total AI working time within the current conversation turn, excluding idle time waiting for tool approvals or user input
-- **Time range filters** — Current / Daily / Weekly / Monthly / Yearly / All, aggregated by per-message timestamps for accurate period stats
-- **Session selector** — browse all past sessions with full message history and per-model stats
-- **By-model grouping** — toggle to see costs split by AI model
-- **Multi-provider pricing** — 28+ models across 11 providers: DeepSeek · Anthropic · OpenAI · Gemini · Qwen · Kimi · GLM · Doubao · Ernie · Grok · Mistral
-- **Auto-updating pricing & rates** — exchange rates refreshed daily from open.er-api.com (free, no API key). Model pricing updated monthly via GitHub Actions
-- **11 languages** — en / zh-CN / zh-TW / ja / ko / es / ar / pt / de / fr / ru. Webview labels update instantly on language change without reload
-- **7 currencies** — CNY / USD / EUR / JPY / KRW / GBP + auto-detect
-- **Budget warning** — alerts when cumulative cost exceeds threshold
-- **Custom models** — guided quick-add via command palette, no manual JSON required
-- **Zero dependencies, fully local** — no telemetry, no data uploads, offline except optional pricing updates
-
-### Status Bar
-
-| Mode | Example |
-|------|---------|
-| Full | `📊 Title… \| AI time 3.2s \| 85K ¥0.012 \| Cumulative 1.2M ¥0.19` |
-| Full + Model | `📊 Title… \| deepseek-v4-pro \| AI time 3.2s \| 85K ¥0.012 \| Cumulative 1.2M ¥0.19` |
-| Compact | `📊 Title… \| 1.2M ¥0.19` |
-
-### Settings
-
-Ctrl+, → search `claudeTokenMonitor`:
+Search `claudeTokenMonitor` in Settings (`Ctrl+,`):
 
 | Setting | Description | Default |
-|---------|-------------|---------|
-| `language` | UI language | auto |
-| `currency` | Display currency | auto |
-| `pollIntervalMs` | Poll interval (ms) | 2000 |
-| `statusBar.showModelName` | Show model name in status bar | false |
-| `statusBar.compactMode` | Compact mode | false |
-| `budgetWarning` | Budget alert threshold (0=off) | 0 |
-| `customModels` | Custom model pricing | [] |
-| `pricing.autoUpdate` | Auto-update pricing & rates | true |
+|---|---|---|
+| `language` | UI language | `auto` |
+| `currency` | Display currency | `auto` |
+| `exchangeRates` | Override exchange rates (units per 1 USD) | `{}` |
+| `customModels` | Custom model pricing entries | `[]` |
+| `statusBar.showModelName` | Show the model name in the status bar | `false` |
+| `statusBar.compactMode` | Show only title, total tokens and cost | `false` |
+| `budgetWarning` | Warn above this cumulative cost (0 = off) | `0` |
+| `pollIntervalMs` | Transcript poll interval in ms | `2000` |
+| `pricing.autoUpdate` | Refresh pricing and exchange rates automatically | `true` |
+| `pricing.updateUrl` | Custom catalog URL (empty = built-in mirrors) | `""` |
+| `showPanelView` | Show the monitor tab in the bottom panel | `false` |
 
-### Commands
+## Commands
 
 | Command | Description |
-|---------|-------------|
-| `Show Token Usage Detail` | Open token monitoring detail panel |
-| `Show Last Message Cost` | Show cost of the last message |
-| `Open Token Monitor Settings` | Open extension settings |
-| `Refresh Token Data` | Manually refresh token data |
-| `Add Custom Model Pricing` | Add custom model pricing |
-| `Manage Custom Models` | Manage custom model entries |
-| `Force Refresh Pricing Data` | Force refresh pricing data from remote |
+|---|---|
+| `Show Token Usage Detail` | Open the dashboard |
+| `Select Session to Monitor` | Follow a specific session |
+| `Show Last Message Cost` | Show the cost of the last message |
+| `Open Token Monitor Settings` | Open this extension's settings |
+| `Refresh Token Data` | Re-read transcripts now |
+| `Add Custom Model Pricing` | Guided add of a custom model |
+| `Manage Custom Models` | List and delete custom models |
+| `Force Refresh Pricing Data` | Fetch the catalog immediately |
 
-### Prerequisites
+## Privacy
 
-- VSCode ≥ 1.90
-- Claude Code installed
+- Everything is computed locally from files Claude Code already writes.
+- No telemetry, no accounts, no data leaves your machine.
+- The only network calls are the optional pricing catalog and exchange-rate downloads. Disable them with `pricing.autoUpdate: false`.
+
+## FAQ
+
+**Why doesn't it use Claude Code's `/cost`?** `/cost` reports the current session only and depends on the CLI's own accounting. Reading the transcripts gives per-message history, historical sessions and subagent usage.
+
+**Why is a cost shown as `—`?** The model is not in the catalog. Add it via **Add Custom Model Pricing** or a `customModels` entry.
+
+**Does it work with non-Anthropic endpoints?** Yes. Any model routed through Claude Code appears in the transcripts; cost is computed from the catalog when the model name is known.
+
+**Does it slow Claude Code down?** No. It only reads files, incrementally, with a byte-offset tailer.
+
+## Development
+
+```bash
+npm install
+npm test          # compile + 22 unit tests (node:test)
+npm run watch     # TypeScript watch mode
+npx vsce package  # build a .vsix
+```
+
+Pricing changes can be validated without network access:
+
+```bash
+node scripts/update-pricing.js --validate
+```
+
+Pull requests are welcome. Please run `npm test` before opening one.
+
+## License
+
+[MIT](LICENSE)
 
 ---
+---
 
-MIT
+# 简体中文
+
+实时显示 Claude Code 每个会话、每条消息、每一轮的 token 用量与费用。所有数据都在本地从 Claude Code 已经写好的 transcript 文件中读取，不需要 API key，不上传任何数据。
+
+```
+$(pulse) 修复登录 Bug | deepseek-v4.1-flash | AI 3.2s | 本轮 85K ¥0.012 | 累计 1.2M ¥0.19
+```
+
+## 功能
+
+| | |
+|---|---|
+| **状态栏实时监控** | 会话标题、当前模型、本轮 AI 耗时、本轮 token/费用、累计用量；悬停查看输入、缓存命中、未命中、输出与命中率 |
+| **逐条消息明细** | 每条 API 响应的 token、缓存、耗时、费用；按 `message.id` 去重，流式快照不会重复计数 |
+| **会话看板** | 当前 / 每天 / 每周 / 每月 / 每年 / 全部，可按模型分组；点击状态栏按钮在编辑器标签页打开完整看板，底部面板改为自行开启 |
+| **会话选择** | 可跟随任意历史会话，不只是最新会话；子代理（subagent）的用量也计入实时与历史统计 |
+| **定价准确** | 内置 40+ 模型：Anthropic、OpenAI、Google、阿里云百炼（DeepSeek + Qwen）、Moonshot、智谱、豆包、文心、xAI、Mistral；自动识别百炼高峰/低谷价 |
+| **离线优先** | 定价随插件打包；联网更新可选，并使用国内可达的镜像源 |
+| **自定义模型** | 命令面板引导添加私有部署或新模型，无需手写 JSON |
+| **11 种语言 · 7 种货币** | en / zh-CN / zh-TW / ja / ko / es / ar / pt / de / fr / ru · CNY / USD / EUR / JPY / KRW / GBP / 自动 |
+| **预算提醒** | 累计费用超过设定阈值时提醒 |
+
+## 快速开始
+
+1. 在 VS Code 扩展市场安装 **Claude Code Token Monitor**。
+2. 正常使用 Claude Code，几秒内状态栏就会开始显示数据。
+3. 点击状态栏条目打开看板。
+4. 可选：`Ctrl+Shift+P` → **Claude Code Token Monitor: Select Session to Monitor** 选择要跟踪的历史会话。
+
+插件读取 `~/.claude/projects/**/*.jsonl`（Windows 下通常是 `%USERPROFILE%\.claude\projects`）。
+
+> **想放回底部面板？** 把 `claudeTokenMonitor.showPanelView` 设为 `true`。默认关闭，避免占用“问题/输出/终端”区域。
+
+## token 统计方式
+
+Claude Code 会把同一条 assistant 消息的多个流式快照写入 transcript，直接把每行相加会把用量放大十几倍。本插件的做法是：
+
+1. 按 `message.id` 分组；
+2. 取 `output_tokens` 最大的快照（相同则取缓存信息更完整的一条）；
+3. 每条消息只计一次；
+4. 缺失的缓存字段按 0 处理，永不产生 `NaN`。
+
+## 定价说明
+
+- **内置目录**：`pricing.json` 随插件发布，离线也能算对。
+- **每日更新**：GitHub Action 每天更新目录并创建 PR。更新是“合并”而不是“覆盖”：某个供应商抓取失败就保留昨天的价格，单项价格变动超过 5 倍视为解析错误并拒绝。
+- **人工复核**：`pricing-overrides.json` 里的价格（例如百炼高峰/低谷价）优先级最高。
+- **未知模型**：显示 `—`，绝不按最贵的模型猜价。可自行添加自定义模型。
+- **高峰时段**：阿里云百炼在北京时间工作日 09:00–12:00、14:00–18:00 使用不同价格，插件按每条消息的时间自动选择。
+
+## 设置与命令
+
+设置项与命令列表见上方英文部分（`Ctrl+,` 搜索 `claudeTokenMonitor`）。
+
+## 隐私
+
+数据全部在本地计算，无遥测、无账号、不上传。唯一的网络请求是可选的定价目录与汇率下载，可用 `pricing.autoUpdate: false` 关闭。
+
+## 开发
+
+```bash
+npm install
+npm test          # 编译 + 22 个单元测试
+npx vsce package  # 打包 .vsix
+```
+
+提交前请先运行 `npm test`。欢迎 PR。
+
+## 许可证
+
+[MIT](LICENSE)

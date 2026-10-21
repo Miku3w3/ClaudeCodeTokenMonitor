@@ -42,17 +42,20 @@ export function parseLine(lineJson: string): ParsedEvent | null {
       return null; // No usage data == not useful
     }
 
-    // Deduplicate by message.id — only count each unique assistant message once.
-    // Claude Code emits multiple "assistant" lines with the same message.id for
-    // each step in a tool-use chain. We only want the first occurrence.
-    // (Dedup is handled at the TokenStore level; here we just parse.)
-
+    // Every streaming snapshot of this response shares message.id, but each
+    // line gets a fresh uuid. Callers MUST dedupe by messageId (keeping the
+    // snapshot with the largest output_tokens), not by uuid.
     return {
       type: 'assistant',
       timestamp: obj.timestamp || new Date().toISOString(),
       uuid: obj.uuid || message.id || '',
       sessionId: obj.sessionId || '',
       isRealUserMessage: false,
+      messageId: message.id || obj.uuid || '',
+      cwd: typeof obj.cwd === 'string' ? obj.cwd : undefined,
+      slug: typeof obj.slug === 'string' ? obj.slug : undefined,
+      agentId: typeof obj.agentId === 'string' ? obj.agentId : undefined,
+      isSidechain: obj.isSidechain === true ? true : undefined,
       usage,
       model: message.model || 'unknown',
     };
@@ -90,6 +93,10 @@ export function parseLine(lineJson: string): ParsedEvent | null {
         uuid: obj.uuid || '',
         sessionId: obj.sessionId || '',
         isRealUserMessage: false,
+        cwd: typeof obj.cwd === 'string' ? obj.cwd : undefined,
+        slug: typeof obj.slug === 'string' ? obj.slug : undefined,
+        agentId: typeof obj.agentId === 'string' ? obj.agentId : undefined,
+        isSidechain: obj.isSidechain === true ? true : undefined,
       };
     }
 
@@ -99,6 +106,10 @@ export function parseLine(lineJson: string): ParsedEvent | null {
       uuid: obj.uuid || '',
       sessionId: obj.sessionId || '',
       isRealUserMessage: true,
+      cwd: typeof obj.cwd === 'string' ? obj.cwd : undefined,
+      slug: typeof obj.slug === 'string' ? obj.slug : undefined,
+      agentId: typeof obj.agentId === 'string' ? obj.agentId : undefined,
+      isSidechain: obj.isSidechain === true ? true : undefined,
     };
   }
 

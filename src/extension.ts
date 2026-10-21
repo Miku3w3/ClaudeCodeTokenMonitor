@@ -6,16 +6,19 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { parseLine } from './parsers/TranscriptParser';
 import {
-  calculateCost, normalizeModelName, formatCost, abbreviateTokens,
+  calculateCostDetail, normalizeModelName, formatCost, abbreviateTokens,
   resolvePricing, convertCurrency,
 } from './model/CostCalculator';
+import { normalizeUsage, isBetterSnapshot } from './core/usage';
+import { TranscriptTailer } from './core/transcriptTailer';
+import { replayTranscriptLines, type TranscriptSource } from './core/replay';
 import { claudeDir, tokenMonitorDir, tokenTrackerDir, transcriptPath as getTranscriptPath } from './utils/paths';
-import type { PerMessageStats, SessionPidFile, ClaudeReadableData, TimeRange, AggregatedData, SessionIndexEntry, ModelStatEntry } from './model/types';
+import type { Currency, PerMessageStats, SessionPidFile, ClaudeReadableData, TimeRange, AggregatedData, SessionIndexEntry, ModelStatEntry } from './model/types';
 import { DetailPanel } from './ui/DetailPanel';
 import type { PanelData } from './ui/DetailPanel';
 import { t, initI18n, isRTL } from './i18n/index';
 import { getConfig } from './config/settings';
-import { checkForUpdates } from './model/pricing-fetcher';
+import { checkForUpdates, loadBundledPricing } from './model/pricing-fetcher';
 import { getRatesUpdatedAt } from './model/pricing';
 import type { ExtensionConfig } from './model/types';
 import * as SessionStore from './data/SessionStore';
@@ -24,6 +27,11 @@ import * as SessionStore from './data/SessionStore';
 let statusBarItem: vscode.StatusBarItem;
 let pollTimer: ReturnType<typeof setInterval> | null = null;
 let detailPanel: DetailPanel;
+/** Reused standalone dashboard panel (status-bar button). */
+let standalonePanel: vscode.WebviewPanel | null = null;
+let standaloneSyncTimer: ReturnType<typeof setInterval> | null = null;
+/** Periodic pricing refresh while the editor stays open for days. */
+let pricingRefreshTimer: ReturnType<typeof setInterval> | null = null;
 
 // Transcript parse cache — keyed by file path, invalidated on mtime change
 const transcriptCache = new Map<string, { mtimeMs: number; messages: PerMessageStats[] }>();
@@ -35,30 +43,33 @@ let extensionId = 'local.claude-code-token-monitor';
 let currentSessionId = '';
 let currentTitle = '';
 let currentModel = 'unknown';
-let cumulativeInput = 0, cumulativeOutput = 0, cumulativeCacheRead = 0, cumulativeCost = 0;
+let cumulativeInput = 0, cumulativeOutput = 0, cumulativeCacheRead = 0, cumulativeCacheCreation = 0, cumulativeCost = 0;
 let messageCount = 0;
 let messages: PerMessageStats[] = [];
-let lastFileSize = 0;
 let lastTranscriptPath = '';
-const seenMessageIds = new Set<string>();
+/** Main transcript tailer (owns its byte offset and partial-line buffer). */
+const mainTailer = new TranscriptTailer();
+/** Per-file tailers for <sessionId>/subagents/** transcripts. */
+const subagentTailers = new Map<string, TranscriptTailer>();
+/** message.id → index in `messages`, so later snapshots can replace earlier ones. */
+const messageIndexByKey = new Map<string, number>();
+let unknownCostMessages = 0;
 let pendingUserTs: number | null = null;
 let turnAiAccumulatorMs = 0;
 let turnTokens = 0;
 let turnCost = 0;
 
-// Tab-switching state (v0.3.0 mechanism)
+// Session selection: explicit override set via the "Select Session" command.
+// Without an override the poller follows the most recently modified transcript.
 let activeSessionOverride: { sessionId: string; cwd: string } | null = null;
 const sessionTitleCache = new Map<string, string>();
-let retryTimer: ReturnType<typeof setTimeout> | null = null;
-let idleByUserChoice = false;
-let idleKnownSessions: Set<string> = new Set(); // sessions known when idle was set; new ones trigger auto-switch
-let cachedTranscripts: Array<{ sessionId: string; cwd: string }> | null = null;
-let transcriptCacheTime = 0;
 
 // Configuration snapshot (refreshed on change)
 let currentConfig: ExtensionConfig = {} as ExtensionConfig;
 // Budget warning: only show once per threshold exceed
 let budgetWarned = false;
+// Debounced full index refresh (used when the live session has subagent files)
+let indexRefreshTimer: ReturnType<typeof setTimeout> | null = null;
 
 // ─── Path encoding (v0.6.0 fix: no dash collapsing) ─────────────
 function encodeProjectPath(cwd: string): string {
@@ -91,57 +102,6 @@ function scanSessions(): Array<{ pid: number; sessionId: string; cwd: string; st
     result.push({ pid, sessionId: data.sessionId, cwd: data.cwd, startedAt: data.startedAt });
   }
   return result;
-}
-
-// ─── Scan all transcripts (including cold/closed sessions) ──
-function scanAllTranscripts(): Array<{ sessionId: string; cwd: string }> {
-  const projectsDir = path.join(claudeDir(), 'projects');
-  const result: Array<{ sessionId: string; cwd: string }> = [];
-  let cwdDirs: fs.Dirent[];
-  try { cwdDirs = fs.readdirSync(projectsDir, { withFileTypes: true }); } catch { return []; }
-
-  const seen = new Set<string>();
-
-  for (const dir of cwdDirs) {
-    if (!dir.isDirectory()) continue;
-    const encoded = dir.name;
-    const cwd = decodeProjectPath(encoded);
-    const cwdPath = path.join(projectsDir, encoded);
-
-    let files: fs.Dirent[];
-    try { files = fs.readdirSync(cwdPath, { withFileTypes: true }); } catch { continue; }
-
-    for (const f of files) {
-      if (!f.isFile() || !f.name.endsWith('.jsonl')) continue;
-      const sessionId = f.name.replace('.jsonl', '');
-      if (seen.has(sessionId)) continue;
-      seen.add(sessionId);
-      result.push({ sessionId, cwd });
-    }
-  }
-  return result;
-}
-
-// Cached wrapper — rescan at most every 30 seconds
-function getCachedTranscripts(): Array<{ sessionId: string; cwd: string }> {
-  const now = Date.now();
-  if (cachedTranscripts && (now - transcriptCacheTime) < 30000) {
-    return cachedTranscripts;
-  }
-  cachedTranscripts = scanAllTranscripts();
-  transcriptCacheTime = now;
-  return cachedTranscripts;
-}
-
-// ─── Decode project path back to cwd ──
-function decodeProjectPath(encoded: string): string {
-  const idx = encoded.indexOf('--');
-  if (idx >= 0) {
-    const drive = encoded.slice(0, idx) + ':\\';
-    const rest = encoded.slice(idx + 2).replace(/-/g, '\\');
-    return drive + rest;
-  }
-  return '/' + encoded.replace(/-/g, '/');
 }
 
 // ─── Title extraction ──────────────────────────────────────
@@ -256,133 +216,257 @@ function poll(): void {
     const encoded = encodeProjectPath(active.cwd);
     const tp = path.join(claudeDir(), 'projects', encoded, active.sessionId + '.jsonl');
 
-    // 4. If session changed, reset all state
+    // 4. If session (or transcript path) changed, reset all state
     if (active.sessionId !== currentSessionId) {
-      if (idleByUserChoice) {
-        // Auto-clear idle only if a genuinely new session appeared (not one we knew about)
-        if (!idleKnownSessions.has(active.sessionId)) {
-          idleByUserChoice = false;
-          idleKnownSessions.clear();
-        } else {
-          updateStatusBar();
-          return;
-        }
-      }
       currentSessionId = active.sessionId;
-      currentTitle = getSessionTitle(active) || '';
-      currentModel = 'unknown';
-      cumulativeInput = 0; cumulativeOutput = 0; cumulativeCacheRead = 0; cumulativeCost = 0;
-      messageCount = 0;
-      messages = [];
-      lastFileSize = 0;
-      lastTranscriptPath = tp;
-      seenMessageIds.clear();
-      pendingUserTs = null;
+      const indexed = SessionStore.loadIndex().sessions[active.sessionId];
+      currentTitle = indexed?.title || getSessionTitle(active) || '';
       budgetWarned = false;
+      resetSessionData();
+      lastTranscriptPath = tp;
+    } else if (tp !== lastTranscriptPath) {
+      resetSessionData();
+      lastTranscriptPath = tp;
     }
 
-    // 5. Read transcript
-    let stat: fs.Stats;
-    try { stat = fs.statSync(tp); } catch { updateStatusBar(); return; }
+    // 5. Read the main transcript and every subagent transcript
+    let changed = false;
 
-    if (stat.size < lastFileSize) { lastFileSize = 0; seenMessageIds.clear(); }
+    const mainRead = mainTailer.read(tp);
+    if (mainRead.missing) { updateStatusBar(); return; }
+    if (mainRead.truncated) {
+      // The tailer has already replayed from byte 0; clear the accumulators
+      // before applying the replayed events.
+      resetAccumulatorState();
+    }
+    for (const event of mainRead.events) {
+      if (processEvent(event, false)) changed = true;
+    }
 
-    if (stat.size > lastFileSize) {
-      const bytesToRead = stat.size - lastFileSize;
-      const buffer = Buffer.alloc(bytesToRead);
-      let fd: number | undefined;
-      try {
-        fd = fs.openSync(tp, 'r');
-        fs.readSync(fd, buffer, 0, bytesToRead, lastFileSize);
-        lastFileSize = stat.size;
-      } catch { return; }
-      finally { if (fd !== undefined) fs.closeSync(fd); }
+    if (readSubagentEvents(active.sessionId, tp)) changed = true;
 
-      const newContent = buffer.toString('utf-8');
-      const lines = newContent.split('\n').filter(l => l.trim());
-      let changed = false;
-
-      for (const line of lines) {
-        const event = parseLine(line);
-        if (!event || event.sessionId !== active.sessionId) continue;
-
-        if (event.type === 'ai-title' && event.title) {
-          currentTitle = event.title;
-          sessionTitleCache.set(event.sessionId, event.title);
-          changed = true;
-          continue;
-        }
-
-        if (event.type === 'user') {
-          messages.push({
-            uuid: event.uuid, timestamp: event.timestamp, isUserMessage: true,
-            inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0,
-            model: '', costCNY: 0, thinkingTimeMs: null,
-          });
-          pendingUserTs = new Date(event.timestamp).getTime();
-          turnAiAccumulatorMs = 0; // New real user message → reset turn accumulators
-          turnTokens = 0;
-          turnCost = 0;
-          changed = true;
-          continue;
-        }
-
-        if (event.type === 'tool_result') {
-          // Tool result — update reference timestamp for next assistant delta,
-          // but do NOT add to messages[] (tool results are not user messages)
-          pendingUserTs = new Date(event.timestamp).getTime();
-          continue;
-        }
-
-        if (event.type === 'assistant' && event.usage) {
-          if (seenMessageIds.has(event.uuid)) continue;
-          seenMessageIds.add(event.uuid);
-
-          const usage = event.usage;
-          currentModel = normalizeModelName(event.model || currentModel);
-          const cost = calculateCost(event.model || currentModel, usage.input_tokens, usage.cache_read_input_tokens, usage.output_tokens);
-
-          let thinkTime: number | null = null;
-          if (pendingUserTs !== null) {
-            thinkTime = new Date(event.timestamp).getTime() - pendingUserTs;
-            turnAiAccumulatorMs += thinkTime;
-            // Set pendingUserTs to this assistant's timestamp so next assistant
-            // in the same turn measures from here (tool_results will refine it)
-            pendingUserTs = new Date(event.timestamp).getTime();
-          }
-
-          const msg: PerMessageStats = {
-            uuid: event.uuid, timestamp: event.timestamp, isUserMessage: false,
-            inputTokens: usage.input_tokens, outputTokens: usage.output_tokens,
-            cacheReadTokens: usage.cache_read_input_tokens, cacheCreationTokens: usage.cache_creation_input_tokens,
-            model: currentModel, costCNY: cost, thinkingTimeMs: thinkTime,
-            turnAiTimeMs: turnAiAccumulatorMs,
-          };
-
-          messages.push(msg);
-          cumulativeInput += usage.input_tokens;
-          cumulativeOutput += usage.output_tokens;
-          cumulativeCacheRead += usage.cache_read_input_tokens;
-          cumulativeCost += cost;
-          turnTokens += usage.input_tokens + usage.output_tokens + usage.cache_read_input_tokens;
-          turnCost += cost;
-          messageCount++;
-          changed = true;
-        }
-      }
-
-      if (changed) {
-        updateStatusBar();
-        writeClaudeReadable();
-        pushToWebview();
-        // Persist current session summary to the index
-        upsertCurrentToIndex(active.cwd);
-      }
+    if (changed) {
+      updateStatusBar();
+      writeClaudeReadable();
+      pushToWebview();
+      // Persist current session summary to the index
+      persistCurrentSession(active.cwd);
     } else {
       updateStatusBar();
     }
   } catch (err) {
     console.error('[TokenMonitor] poll error:', err);
+  }
+}
+
+/**
+ * Apply one parsed transcript event to the live session state.
+ * Returns true when anything user-visible changed.
+ */
+function processEvent(
+  event: NonNullable<ReturnType<typeof parseLine>>,
+  fromSubagent: boolean,
+  agentId?: string,
+): boolean {
+  if (fromSubagent) {
+    // Subagent transcripts contain their own user prompts and tool results;
+    // only their assistant usage belongs in the parent session's totals.
+    if (event.type !== 'assistant' || !event.usage) return false;
+  } else if (event.sessionId && currentSessionId && event.sessionId !== currentSessionId) {
+    return false;
+  }
+
+  if (event.type === 'ai-title' && event.title) {
+    currentTitle = event.title;
+    sessionTitleCache.set(currentSessionId, event.title);
+    return true;
+  }
+
+  if (event.type === 'user') {
+    messages.push({
+      uuid: event.uuid, timestamp: event.timestamp, isUserMessage: true,
+      inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0,
+      model: '', costCNY: 0, costKnown: true, thinkingTimeMs: null,
+    });
+    pendingUserTs = new Date(event.timestamp).getTime();
+    turnAiAccumulatorMs = 0; // New real user message → reset turn accumulators
+    turnTokens = 0;
+    turnCost = 0;
+    return true;
+  }
+
+  if (event.type === 'tool_result') {
+    // Tool result — update reference timestamp for next assistant delta,
+    // but do NOT add to messages[] (tool results are not user messages)
+    pendingUserTs = new Date(event.timestamp).getTime();
+    return false;
+  }
+
+  if (event.type !== 'assistant' || !event.usage) return false;
+
+  const key = event.messageId || event.uuid;
+  if (!key) return false;
+
+  const usage = normalizeUsage(event.usage);
+  const model = normalizeModelName(event.model || currentModel || 'unknown');
+  const tsMs = new Date(event.timestamp).getTime();
+  const detail = calculateCostDetail(
+    model,
+    usage,
+    Number.isFinite(tsMs) ? tsMs : Date.now(),
+    currentConfig.customModels,
+  );
+  const costCNY = detail.known ? convertCurrency(detail.amount, detail.currency, 'CNY') : 0;
+  currentModel = model;
+
+  const existingIdx = messageIndexByKey.get(key);
+  if (existingIdx !== undefined) {
+    // Another streaming snapshot of the same API response. Replace it in
+    // place (never add a second message); later lines usually carry more
+    // complete output tokens, but a trailing placeholder must not win.
+    const old = messages[existingIdx];
+    const oldUsage = {
+      inputTokens: old.inputTokens,
+      cacheReadTokens: old.cacheReadTokens,
+      cacheCreationTokens: old.cacheCreationTokens,
+      outputTokens: old.outputTokens,
+    };
+    if (!isBetterSnapshot(usage, oldUsage)) return false;
+
+    const oldTotal = oldUsage.inputTokens + oldUsage.cacheReadTokens
+      + oldUsage.cacheCreationTokens + oldUsage.outputTokens;
+    const newTotal = usage.inputTokens + usage.cacheReadTokens
+      + usage.cacheCreationTokens + usage.outputTokens;
+    cumulativeInput += usage.inputTokens - oldUsage.inputTokens;
+    cumulativeCacheRead += usage.cacheReadTokens - oldUsage.cacheReadTokens;
+    cumulativeCacheCreation += usage.cacheCreationTokens - oldUsage.cacheCreationTokens;
+    cumulativeOutput += usage.outputTokens - oldUsage.outputTokens;
+    cumulativeCost += costCNY - old.costCNY;
+    turnTokens += newTotal - oldTotal;
+    turnCost += costCNY - old.costCNY;
+    if (old.costKnown === false) unknownCostMessages = Math.max(0, unknownCostMessages - 1);
+    if (!detail.known) unknownCostMessages++;
+
+    messages[existingIdx] = {
+      ...old,
+      timestamp: event.timestamp,
+      inputTokens: usage.inputTokens,
+      outputTokens: usage.outputTokens,
+      cacheReadTokens: usage.cacheReadTokens,
+      cacheCreationTokens: usage.cacheCreationTokens,
+      model,
+      costCNY,
+      costNative: detail.amount,
+      costCurrency: detail.currency,
+      costKnown: detail.known,
+      source: fromSubagent ? 'subagent' : 'main',
+      agentId: fromSubagent ? agentId : undefined,
+      agentLabel: fromSubagent && agentId ? agentId.slice(0, 8) : undefined,
+    };
+    return true;
+  }
+
+  let thinkTime: number | null = null;
+  if (!fromSubagent && pendingUserTs !== null) {
+    thinkTime = tsMs - pendingUserTs;
+    turnAiAccumulatorMs += thinkTime;
+    // Measure the next assistant in this turn from this one; tool_results refine it.
+    pendingUserTs = tsMs;
+  }
+
+  const msg: PerMessageStats = {
+    uuid: event.uuid, messageId: key, timestamp: event.timestamp, isUserMessage: false,
+    inputTokens: usage.inputTokens, outputTokens: usage.outputTokens,
+    cacheReadTokens: usage.cacheReadTokens, cacheCreationTokens: usage.cacheCreationTokens,
+    model, costCNY, costNative: detail.amount, costCurrency: detail.currency,
+    costKnown: detail.known, thinkingTimeMs: thinkTime,
+    turnAiTimeMs: turnAiAccumulatorMs,
+    source: fromSubagent ? 'subagent' : 'main',
+    agentId: fromSubagent ? agentId : undefined,
+    agentLabel: fromSubagent && agentId ? agentId.slice(0, 8) : undefined,
+  };
+
+  messageIndexByKey.set(key, messages.length);
+  messages.push(msg);
+  cumulativeInput += usage.inputTokens;
+  cumulativeOutput += usage.outputTokens;
+  cumulativeCacheRead += usage.cacheReadTokens;
+  cumulativeCacheCreation += usage.cacheCreationTokens;
+  cumulativeCost += costCNY;
+  turnTokens += usage.inputTokens + usage.outputTokens
+    + usage.cacheReadTokens + usage.cacheCreationTokens;
+  turnCost += costCNY;
+  if (!detail.known) unknownCostMessages++;
+  messageCount++;
+  return true;
+}
+
+/** Subagent files are named agent-<id>.jsonl; journal.jsonl has no usage. */
+function agentIdFromFile(file: string): string | undefined {
+  const base = path.basename(file, '.jsonl');
+  return base.startsWith('agent-') ? base.slice('agent-'.length) : undefined;
+}
+
+/**
+ * Tail every JSONL file under <project>/<sessionId>/subagents/.
+ * Returns true when any event changed the live state.
+ */
+function readSubagentEvents(sessionId: string, mainTranscriptPath: string, canReset = true): boolean {
+  const root = path.join(path.dirname(mainTranscriptPath), sessionId, 'subagents');
+  const files: string[] = [];
+  collectJsonlFiles(root, files, 0);
+  if (files.length === 0) return false;
+
+  const present = new Set(files);
+  for (const file of Array.from(subagentTailers.keys())) {
+    if (!present.has(file)) subagentTailers.delete(file);
+  }
+
+  let changed = false;
+  for (const file of files.sort()) {
+    let tailer = subagentTailers.get(file);
+    if (!tailer) {
+      tailer = new TranscriptTailer();
+      subagentTailers.set(file, tailer);
+    }
+    const result = tailer.read(file);
+    if (result.missing) continue;
+    if (result.truncated) {
+      if (!canReset) {
+        console.warn(`[TokenMonitor] Subagent transcript rewritten repeatedly: ${file}`);
+        continue;
+      }
+      // Replaying only this file would double-count the earlier content, so
+      // rebuild the whole live session from scratch.
+      console.log('[TokenMonitor] Subagent transcript truncated — replaying session');
+      resetSessionData();
+      const replay = mainTailer.read(mainTranscriptPath);
+      let replayed = false;
+      for (const event of replay.events) {
+        if (processEvent(event, false)) replayed = true;
+      }
+      if (readSubagentEvents(sessionId, mainTranscriptPath, false)) replayed = true;
+      return replayed;
+    }
+    for (const event of result.events) {
+      if (processEvent(event, true, agentIdFromFile(file))) changed = true;
+    }
+  }
+  return changed;
+}
+
+/** Recursively collect .jsonl files (bounded depth). */
+function collectJsonlFiles(dir: string, out: string[], depth: number): void {
+  if (depth > 8) return;
+  let entries: fs.Dirent[];
+  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      collectJsonlFiles(full, out, depth + 1);
+    } else if (entry.isFile() && entry.name.endsWith('.jsonl')) {
+      out.push(full);
+    }
   }
 }
 
@@ -397,23 +481,24 @@ function updateStatusBar(): void {
     return;
   }
 
-  const totalTokens = cumulativeInput + cumulativeCacheRead + cumulativeOutput;
+  const totalTokens = cumulativeInput + cumulativeCacheRead + cumulativeCacheCreation + cumulativeOutput;
   const lastAsst = findLast(messages, m => !m.isUserMessage);
   const shortTitle = currentTitle.length > 8 ? currentTitle.slice(0, 8) + '…' : currentTitle;
   const currency = currentConfig.resolvedCurrency;
   const displayCumulativeCost = costInDisplayCurrency(cumulativeCost, currency);
+  const unknownMark = unknownCostMessages > 0 ? '?' : '';
 
   // Compact mode: only title + cumulative
   if (currentConfig.compactMode) {
-    statusBarItem.text = `$(pulse) ${shortTitle} | ${abbreviateTokens(totalTokens)} ${formatCost(displayCumulativeCost, currency)}`;
+    statusBarItem.text = `$(pulse) ${shortTitle} | ${abbreviateTokens(totalTokens)} ${formatCost(displayCumulativeCost, currency)}${unknownMark}`;
   } else {
     const parts: string[] = [shortTitle];
     if (currentConfig.showModelName) {
       parts.push(currentModel);
     }
     parts.push(`${t('statusBar.turnAiTime')}${formatThinkTime(turnAiAccumulatorMs)}`);
-    parts.push(`${abbreviateTokens(turnTokens)} ${formatCost(costInDisplayCurrency(turnCost, currency), currency)}`);
-    parts.push(`${t('statusBar.cumulative')}${abbreviateTokens(totalTokens)} ${formatCost(displayCumulativeCost, currency)}`);
+    parts.push(`${abbreviateTokens(turnTokens)} ${formatCost(costInDisplayCurrency(turnCost, currency), currency)}${unknownMark}`);
+    parts.push(`${t('statusBar.cumulative')}${abbreviateTokens(totalTokens)} ${formatCost(displayCumulativeCost, currency)}${unknownMark}`);
     statusBarItem.text = `$(pulse) ${parts.join(' | ')}`;
   }
 
@@ -433,7 +518,8 @@ function updateStatusBar(): void {
 
   // Tooltip
   const md = new vscode.MarkdownString();
-  md.supportHtml = true; md.isTrusted = true;
+  md.supportHtml = false;
+  md.isTrusted = false;
   md.appendMarkdown(`### \u{1F4CA} ${escapeMd(currentTitle)}\n\n`);
   md.appendMarkdown(`*${t('tooltip.lastModel')}: ${escapeMd(currentModel)}*\n\n`);
 
@@ -449,7 +535,7 @@ function updateStatusBar(): void {
     md.appendMarkdown(`${t('tooltip.cacheHit')}  \n  ${lastAsst.cacheReadTokens.toLocaleString()} (${lastHitRate})\n\n`);
     md.appendMarkdown(`${t('tooltip.cacheMiss')}  \n  ${lastAsst.inputTokens.toLocaleString()}\n\n`);
     md.appendMarkdown(`${t('tooltip.output')}  \n  ${lastAsst.outputTokens.toLocaleString()}\n\n`);
-    md.appendMarkdown(`${t('tooltip.cost')}  \n  ${formatCost(displayLastCost, currency)}\n\n`);
+    md.appendMarkdown(`${t('tooltip.cost')}  \n  ${formatCost(displayLastCost, currency)}${lastAsst.costKnown === false ? ' (?)' : ''}\n\n`);
     md.appendMarkdown(`**${t('tooltip.turnAiTime')}**  \n  ${formatThinkTime(turnAiAccumulatorMs)}\n\n`);
   } else {
     md.appendMarkdown(`*${t('tooltip.noMessages')}*\n\n`);
@@ -465,11 +551,12 @@ function updateStatusBar(): void {
   md.appendMarkdown(`${t('tooltip.cost')}  \n  ${formatCost(displayCumulativeCost, currency)}\n\n`);
   md.appendMarkdown(`${t('tooltip.messages')}  \n  ${messageCount}\n\n`);
 
-  // Exchange rate — only show when display currency differs from model's native currency
+  // Exchange rate — only show when display currency differs from the model's native currency
   const rateTo = currency;
-  const rateFrom = resolvePricing(currentModel, currentConfig.customModels).currency;
-  if (rateTo !== rateFrom) {
-    const backConvert = convertCurrency(1, rateTo as any, rateFrom as any);
+  const currentPricing = resolvePricing(currentModel, currentConfig.customModels);
+  const rateFrom = currentPricing?.currency;
+  if (rateFrom && rateTo !== rateFrom) {
+    const backConvert = convertCurrency(1, rateTo as Currency, rateFrom);
     const rate = (1 / backConvert).toFixed(2);
     md.appendMarkdown(`---\n\n*1 ${rateFrom} ≈ ${rate} ${rateTo} · ${formatRatesAge()}*`);
   }
@@ -479,20 +566,28 @@ function updateStatusBar(): void {
 
 // ─── Helpers ──────────────────────────────────────────────────
 
-/** Convert a cost stored in the model's native currency to the display currency. */
-function costInDisplayCurrency(nativeCost: number, targetCurrency: string): number {
-  if (!Number.isFinite(nativeCost)) return 0;
-  if (!targetCurrency) return nativeCost;
-  const pricing = resolvePricing(currentModel, currentConfig.customModels);
-  if (!pricing?.currency || pricing.currency === targetCurrency) return nativeCost;
-  const converted = convertCurrency(nativeCost, pricing.currency, targetCurrency as any);
-  return Number.isFinite(converted) ? converted : nativeCost;
+/**
+ * Convert a cost stored in CNY (all live totals are normalized to CNY at
+ * calculation time) to the user's display currency.
+ */
+function costInDisplayCurrency(cnyCost: number, targetCurrency: string): number {
+  if (!Number.isFinite(cnyCost)) return 0;
+  if (!targetCurrency || targetCurrency === 'CNY') return cnyCost;
+  const converted = convertCurrency(cnyCost, 'CNY', targetCurrency as Currency);
+  return Number.isFinite(converted) ? converted : cnyCost;
 }
 
 /** Save the current in-memory session state to the persistent index. */
 function upsertCurrentToIndex(cwd: string): void {
   if (!currentSessionId || messageCount === 0) return;
   const primaryModel = computePrimaryModel();
+  let fileSize = 0;
+  let fileMtimeMs = 0;
+  try {
+    const stat = fs.statSync(lastTranscriptPath);
+    fileSize = stat.size;
+    fileMtimeMs = stat.mtimeMs;
+  } catch { /* transcript may be gone */ }
   SessionStore.upsertSession(currentSessionId, {
     sessionId: currentSessionId,
     title: currentTitle || currentSessionId.slice(0, 8) + '...',
@@ -500,13 +595,42 @@ function upsertCurrentToIndex(cwd: string): void {
     startedAt: messages.length > 0 ? new Date(messages[0].timestamp).getTime() : Date.now(),
     lastUpdatedAt: Date.now(),
     messageCount,
-    totalInputTokens: cumulativeInput,          // cache-miss only, consistent with parseTranscriptFile
+    totalInputTokens: cumulativeInput,          // cache-miss only
     totalOutputTokens: cumulativeOutput,
     totalCacheHitTokens: cumulativeCacheRead,
-    totalCacheMissTokens: 0,                    // redundant with totalInputTokens; kept for schema compat
+    totalCacheMissTokens: 0, // cache-miss input is already totalInputTokens (schema compat)
+    totalCacheCreationTokens: cumulativeCacheCreation,
     totalCostCNY: cumulativeCost,
     primaryModel,
+    fileSize,
+    fileMtimeMs,
   });
+}
+
+/**
+ * Keep the index fresh. Sessions without subagent transcripts can be updated
+ * from the live state cheaply; sessions with subagents need a full rescan so
+ * their tokens are not silently dropped from history.
+ */
+function persistCurrentSession(cwd: string): void {
+  const nestedDir = path.join(path.dirname(lastTranscriptPath), currentSessionId, 'subagents');
+  if (fs.existsSync(nestedDir)) {
+    scheduleIndexRefresh();
+    return;
+  }
+  upsertCurrentToIndex(cwd);
+}
+
+function scheduleIndexRefresh(): void {
+  if (indexRefreshTimer) return;
+  indexRefreshTimer = setTimeout(() => {
+    indexRefreshTimer = null;
+    try {
+      SessionStore.scanAndIndex(currentConfig.customModels);
+    } catch (err) {
+      console.error('[TokenMonitor] index refresh error:', err);
+    }
+  }, 15000);
 }
 
 function computePrimaryModel(): string {
@@ -524,19 +648,35 @@ function computePrimaryModel(): string {
   return best;
 }
 
+/** Clear everything derived from the transcript, keeping session identity. */
+/** Clear everything derived from transcript events, keeping tailer positions. */
+function resetAccumulatorState(): void {
+  currentModel = 'unknown';
+  cumulativeInput = 0; cumulativeOutput = 0; cumulativeCacheRead = 0;
+  cumulativeCacheCreation = 0; cumulativeCost = 0;
+  messageCount = 0;
+  messages = [];
+  messageIndexByKey.clear();
+  unknownCostMessages = 0;
+  pendingUserTs = null;
+  turnAiAccumulatorMs = 0;
+  turnTokens = 0;
+  turnCost = 0;
+}
+
+/** Clear accumulator state and forget all file positions (new session / refresh). */
+function resetSessionData(): void {
+  resetAccumulatorState();
+  mainTailer.reset();
+  subagentTailers.clear();
+}
+
 function resetState(): void {
-  // Save old session to index before resetting
-  if (currentSessionId && messageCount > 0) {
-    const cwd = ''; // We don't have cwd handy here, which is fine — the session
-    // is already indexed from the last poll upsert
-  }
   currentSessionId = ''; currentTitle = ''; currentModel = 'unknown';
-  cumulativeInput = 0; cumulativeOutput = 0; cumulativeCacheRead = 0; cumulativeCost = 0;
-  messageCount = 0; messages = []; lastFileSize = 0; lastTranscriptPath = '';
-  seenMessageIds.clear(); pendingUserTs = null; activeSessionOverride = null;
-  turnAiAccumulatorMs = 0; turnTokens = 0; turnCost = 0;
+  resetSessionData();
+  lastTranscriptPath = '';
+  activeSessionOverride = null;
   budgetWarned = false;
-  if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
 }
 
 function findLast<T>(arr: T[], pred: (item: T) => boolean): T | null {
@@ -585,7 +725,7 @@ function formatRatesAge(): string {
 // ─── Claude-readable output ───────────────────────────────────
 function writeClaudeReadable(): void {
   try { fs.mkdirSync(tokenMonitorDir(), { recursive: true }); } catch { /* */ }
-  const totalTokens = cumulativeInput + cumulativeCacheRead + cumulativeOutput;
+  const totalTokens = cumulativeInput + cumulativeCacheRead + cumulativeCacheCreation + cumulativeOutput;
   const lastAsst = findLast(messages, m => !m.isUserMessage);
   const lastUser = findLast(messages, m => m.isUserMessage);
   const data: ClaudeReadableData = {
@@ -657,15 +797,17 @@ function handleSelectSession(sessionId: string, postMsg?: (msg: any) => void): v
   const entry = SessionStore.getAllSessions().find(s => s.sessionId === sessionId);
   if (!entry) return;
 
-  // Parse the transcript and build PanelData
+  // Parse the main transcript plus subagent transcripts and build PanelData
   const tp = path.join(claudeDir(), 'projects', encodeProjectPath(entry.cwd), sessionId + '.jsonl');
   if (!fs.existsSync(tp)) return;
 
-  const msgs = parseFullTranscriptCached(tp);
-  const totalTokens = msgs.reduce((sum, m) => sum + (m.isUserMessage ? 0 : m.inputTokens + m.outputTokens + m.cacheReadTokens), 0);
-  const totalCost = msgs.reduce((sum, m) => sum + (m.isUserMessage ? 0 : m.costCNY), 0);
-  const displayCost = costInDisplayCurrency(totalCost, currentConfig.resolvedCurrency);
-  const lastAsst = findLast(msgs, m => !m.isUserMessage);
+  const msgs = parseSessionTranscripts(entry.cwd, sessionId);
+  // Totals and the per-message table now both include subagent transcripts.
+  const totalTokens = entry.totalInputTokens + entry.totalOutputTokens
+    + entry.totalCacheHitTokens + (entry.totalCacheCreationTokens || 0);
+  const displayCost = costInDisplayCurrency(entry.totalCostCNY, currentConfig.resolvedCurrency);
+  const lastAsst = findLast(msgs, m => !m.isUserMessage && (m.turnAiTimeMs ?? 0) > 0)
+    || findLast(msgs, m => !m.isUserMessage);
   const modelStats = buildModelStatsFromMessages(msgs);
 
   const sessionData: PanelData = {
@@ -673,13 +815,13 @@ function handleSelectSession(sessionId: string, postMsg?: (msg: any) => void): v
     title: entry.title,
     model: entry.primaryModel,
     isActive: false,
-    cumulativeInputTokens: entry.totalCacheMissTokens + entry.totalInputTokens,
+    cumulativeInputTokens: entry.totalInputTokens,
     cumulativeOutputTokens: entry.totalOutputTokens,
     cumulativeCacheReadTokens: entry.totalCacheHitTokens,
     cumulativeCostCNY: displayCost,
     totalTokens,
     messageCount: entry.messageCount,
-    messages: msgs.slice(-200),
+    messages: toDisplayMessages(msgs),
     lastUpdatedAt: new Date(entry.lastUpdatedAt).toISOString(),
     turnAiTimeMs: lastAsst?.turnAiTimeMs ?? 0,
     lang: currentConfig.resolvedLanguage,
@@ -715,8 +857,7 @@ function buildAggregatedData(timeRange: TimeRange, sessions: SessionIndexEntry[]
   const activeSessions: SessionIndexEntry[] = []; // sessions with ≥1 message in range
 
   for (const s of sessions) {
-    const fp = getTranscriptPath(s.cwd, s.sessionId);
-    const msgs = parseFullTranscriptCached(fp);
+    const msgs = parseSessionTranscripts(s.cwd, s.sessionId);
     if (msgs.length === 0) continue;
 
     // Filter messages whose timestamp falls within [startMs, endMs]
@@ -728,10 +869,13 @@ function buildAggregatedData(timeRange: TimeRange, sessions: SessionIndexEntry[]
     const assistantMsgs = filtered.filter(m => !m.isUserMessage);
     if (assistantMsgs.length === 0) continue; // no assistant messages in range → skip session
 
-    activeSessions.push(s);
+    activeSessions.push({
+      ...s,
+      totalCostCNY: costInDisplayCurrency(s.totalCostCNY, currentConfig.resolvedCurrency),
+    });
 
     for (const m of assistantMsgs) {
-      totalTokens += m.inputTokens + m.outputTokens + m.cacheReadTokens;
+      totalTokens += m.inputTokens + m.outputTokens + m.cacheReadTokens + m.cacheCreationTokens;
       totalCostCNY += m.costCNY;
       inputTokens += m.inputTokens + m.cacheReadTokens;
       outputTokens += m.outputTokens;
@@ -766,7 +910,7 @@ function buildAggregatedData(timeRange: TimeRange, sessions: SessionIndexEntry[]
 }
 
 /** Parse a transcript file with mtime-based caching. */
-function parseFullTranscriptCached(filePath: string): PerMessageStats[] {
+function parseFullTranscriptCached(filePath: string, source?: TranscriptSource): PerMessageStats[] {
   let mtimeMs = 0;
   try { mtimeMs = fs.statSync(filePath).mtimeMs; } catch { return []; }
 
@@ -775,66 +919,45 @@ function parseFullTranscriptCached(filePath: string): PerMessageStats[] {
     return cached.messages;
   }
 
-  const messages = parseFullTranscriptRaw(filePath);
+  const messages = parseFullTranscriptRaw(filePath, source);
   transcriptCache.set(filePath, { mtimeMs, messages });
   return messages;
 }
 
 /** Parse an entire transcript file into PerMessageStats[] (raw, uncached). */
-function parseFullTranscriptRaw(filePath: string): PerMessageStats[] {
-  const result: PerMessageStats[] = [];
+function parseFullTranscriptRaw(filePath: string, source?: TranscriptSource): PerMessageStats[] {
   let raw: string;
-  try { raw = fs.readFileSync(filePath, 'utf-8'); } catch { return result; }
+  try { raw = fs.readFileSync(filePath, 'utf-8'); } catch { return []; }
+  return replayTranscriptLines(raw.split('\n'), currentConfig.customModels, source);
+}
 
-  const seenIds = new Set<string>();
-  let pendingTs: number | null = null;
-  let turnAccumMs = 0;
+/**
+ * Parse everything that belongs to one session: the main transcript plus every
+ * JSONL file under <sessionId>/subagents/. Subagent usage is part of the bill,
+ * so historical and aggregated views must include it (the live poller already
+ * tails these files).
+ */
+function parseSessionTranscripts(cwd: string, sessionId: string): PerMessageStats[] {
+  const mainPath = getTranscriptPath(cwd, sessionId);
+  const files = [mainPath];
+  const nestedDir = path.join(path.dirname(mainPath), sessionId, 'subagents');
+  collectJsonlFiles(nestedDir, files, 0);
 
-  for (const line of raw.split('\n')) {
-    if (!line.trim()) continue;
-    const event = parseLine(line);
-    if (!event) continue;
-
-    if (event.type === 'user') {
-      result.push({
-        uuid: event.uuid, timestamp: event.timestamp, isUserMessage: true,
-        inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0,
-        model: '', costCNY: 0, thinkingTimeMs: null,
-      });
-      pendingTs = new Date(event.timestamp).getTime();
-      turnAccumMs = 0; // New real user message → reset turn accumulator
-    }
-
-    if (event.type === 'tool_result') {
-      // Tool result — update reference timestamp, don't add to result
-      pendingTs = new Date(event.timestamp).getTime();
-    }
-
-    if (event.type === 'assistant' && event.usage) {
-      if (seenIds.has(event.uuid)) continue;
-      seenIds.add(event.uuid);
-
-      const model = normalizeModelName(event.model || 'unknown');
-      const cost = calculateCost(event.model || 'unknown', event.usage.input_tokens, event.usage.cache_read_input_tokens, event.usage.output_tokens);
-
-      let thinkTime: number | null = null;
-      if (pendingTs !== null) {
-        thinkTime = new Date(event.timestamp).getTime() - pendingTs;
-        turnAccumMs += thinkTime;
-        pendingTs = new Date(event.timestamp).getTime();
-      }
-
-      result.push({
-        uuid: event.uuid, timestamp: event.timestamp, isUserMessage: false,
-        inputTokens: event.usage.input_tokens, outputTokens: event.usage.output_tokens,
-        cacheReadTokens: event.usage.cache_read_input_tokens, cacheCreationTokens: event.usage.cache_creation_input_tokens,
-        model, costCNY: cost, thinkingTimeMs: thinkTime,
-        turnAiTimeMs: turnAccumMs,
-      });
-    }
+  const all: PerMessageStats[] = [];
+  for (let i = 0; i < files.length; i++) {
+    const file = files[i];
+    const isMain = i === 0;
+    const agentId = isMain ? undefined : agentIdFromFile(file);
+    const msgs = parseFullTranscriptCached(
+      file,
+      isMain
+        ? { kind: 'main' }
+        : { kind: 'subagent', agentId, agentLabel: agentId ? agentId.slice(0, 8) : undefined },
+    );
+    if (msgs.length > 0) all.push(...msgs);
   }
-
-  return result;
+  all.sort((a, b) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime());
+  return all;
 }
 
 /** Build model stats from a PerMessageStats array (for session detail views). */
@@ -851,7 +974,7 @@ function buildModelStatsFromMessages(msgs: PerMessageStats[]): ModelStatEntry[] 
     entry.cacheHits += m.cacheReadTokens;
     entry.cacheMiss += m.inputTokens;
     entry.outputTokens += m.outputTokens;
-    entry.tokens += m.inputTokens + m.cacheReadTokens + m.outputTokens;
+    entry.tokens += m.inputTokens + m.cacheReadTokens + m.cacheCreationTokens + m.outputTokens;
     map.set(model, entry);
   }
   return Array.from(map.entries()).map(([model, v]) => ({ model, ...v }));
@@ -861,9 +984,18 @@ function buildModelStats(): Array<{ model: string; cost: number; tokens: number;
   return buildModelStatsFromMessages(messages);
 }
 
+/** Copy the last 200 messages and attach the display-currency cost for the UI. */
+function toDisplayMessages(list: PerMessageStats[]): PerMessageStats[] {
+  const currency = currentConfig.resolvedCurrency;
+  return list.slice(-200).map(m => ({
+    ...m,
+    costDisplay: costInDisplayCurrency(m.costCNY, currency),
+  }));
+}
+
 function pushToWebview(): void {
   if (!detailPanel) { console.error('[TokenMonitor] pushToWebview: detailPanel is null'); return; }
-  const totalTokens = cumulativeInput + cumulativeCacheRead + cumulativeOutput;
+  const totalTokens = cumulativeInput + cumulativeCacheRead + cumulativeCacheCreation + cumulativeOutput;
   const currency = currentConfig.resolvedCurrency;
   const displayCumulativeCost = costInDisplayCurrency(cumulativeCost, currency);
   detailPanel.pushData({
@@ -873,7 +1005,7 @@ function pushToWebview(): void {
     cumulativeInputTokens: cumulativeInput, cumulativeOutputTokens: cumulativeOutput,
     cumulativeCacheReadTokens: cumulativeCacheRead, cumulativeCostCNY: displayCumulativeCost,
     totalTokens, messageCount,
-    messages: messages.slice(-200),
+    messages: toDisplayMessages(messages),
     lastUpdatedAt: new Date().toISOString(),
     turnAiTimeMs: turnAiAccumulatorMs,
     lang: currentConfig.resolvedLanguage,
@@ -885,7 +1017,7 @@ function pushToWebview(): void {
 }
 
 function pushToWebviewPanel(panel: vscode.WebviewPanel): void {
-  const totalTokens = cumulativeInput + cumulativeCacheRead + cumulativeOutput;
+  const totalTokens = cumulativeInput + cumulativeCacheRead + cumulativeCacheCreation + cumulativeOutput;
   const currency = currentConfig.resolvedCurrency;
   const displayCumulativeCost = costInDisplayCurrency(cumulativeCost, currency);
   panel.webview.postMessage({
@@ -900,7 +1032,7 @@ function pushToWebviewPanel(panel: vscode.WebviewPanel): void {
       cumulativeInputTokens: cumulativeInput, cumulativeOutputTokens: cumulativeOutput,
       cumulativeCacheReadTokens: cumulativeCacheRead, cumulativeCostCNY: displayCumulativeCost,
       totalTokens, messageCount,
-      messages: messages.slice(-200),
+      messages: toDisplayMessages(messages),
       lastUpdatedAt: new Date().toISOString(),
       turnAiTimeMs: turnAiAccumulatorMs,
       lang: currentConfig.resolvedLanguage,
@@ -915,113 +1047,101 @@ function pushToWebviewPanel(panel: vscode.WebviewPanel): void {
   } catch { /* */ }
 }
 
-// ─── Tab switch handler (v0.3.0 event-driven) ──
-function handleTabChange(label: string): void {
-  if (!label) return;
+// ─── Explicit session selection ─────────────────────────────
+async function selectSessionToMonitor(): Promise<void> {
+  const entries = SessionStore.getAllSessions();
+  const live = scanSessions();
+  const liveIds = new Set(live.map(s => s.sessionId));
+  const zh = currentConfig.resolvedLanguage.startsWith('zh');
 
-  if (label === currentTitle && currentSessionId) return;
+  const items: Array<vscode.QuickPickItem & { sessionId?: string; cwd?: string; clear?: boolean }> = [
+    {
+      label: zh ? '$(refresh) 跟随最近活跃的会话' : '$(refresh) Follow the most recently active session',
+      description: '',
+      clear: true,
+    },
+  ];
 
-  // Case 1: "Claude Code" = new/empty session → show idle
-  if (label === 'Claude Code') {
-    idleByUserChoice = true;
-    // Remember existing sessions so we can detect new ones
-    idleKnownSessions = new Set();
-    const current = scanSessions();
-    for (const s of current) idleKnownSessions.add(s.sessionId);
-    resetState();
-    updateStatusBar();
+  for (const entry of entries) {
+    items.push({
+      label: entry.title || entry.sessionId.slice(0, 8),
+      description: `${entry.cwd}${liveIds.has(entry.sessionId) ? (zh ? ' · 运行中' : ' · live') : ''}`,
+      detail: `${new Date(entry.lastUpdatedAt).toLocaleString()} · ${entry.messageCount} msgs · ${entry.primaryModel}`,
+      sessionId: entry.sessionId,
+      cwd: entry.cwd,
+    });
+  }
+
+  const indexed = new Set(entries.map(e => e.sessionId));
+  for (const session of live) {
+    if (indexed.has(session.sessionId)) continue;
+    items.push({
+      label: session.sessionId.slice(0, 8),
+      description: `${session.cwd} · ${zh ? '运行中' : 'live'}`,
+      sessionId: session.sessionId,
+      cwd: session.cwd,
+    });
+  }
+
+  if (items.length === 1) {
+    vscode.window.showInformationMessage(zh ? '还没有可选择的会话。' : 'No sessions to select yet.');
     return;
   }
 
-  const activeSessions = scanSessions();
-  const coldTranscripts = getCachedTranscripts();
-  const seenSids = new Set<string>();
-  const allSessions: Array<{ sessionId: string; cwd: string }> = [];
+  const picked = await vscode.window.showQuickPick(items, {
+    placeHolder: zh ? '选择要监视的 Claude Code 会话' : 'Select a Claude Code session to monitor',
+    matchOnDescription: true,
+    matchOnDetail: true,
+  });
+  if (!picked) return;
 
-  for (const s of activeSessions) {
-    if (!seenSids.has(s.sessionId)) { seenSids.add(s.sessionId); allSessions.push(s); }
-  }
-  for (const s of coldTranscripts) {
-    if (!seenSids.has(s.sessionId)) { seenSids.add(s.sessionId); allSessions.push(s); }
-  }
-
-  // Case 2: Exact title match
-  for (const s of allSessions) {
-    const title = getSessionTitle(s);
-    if (title && title === label) {
-      if (s.sessionId !== currentSessionId) {
-        idleByUserChoice = false;
-        activeSessionOverride = s;
-        currentTitle = title;
-        lastFileSize = 0;
-        budgetWarned = false;
-        poll();
-      }
-      return;
-    }
-  }
-
-  // Case 3: Only one session with empty title → match it
-  const emptyTitleSessions = allSessions.filter(s => !getSessionTitle(s));
-  if (emptyTitleSessions.length === 1) {
-    const s = emptyTitleSessions[0];
-    idleByUserChoice = false;
-    activeSessionOverride = s;
-    currentTitle = label;
-    lastFileSize = 0;
-    budgetWarned = false;
+  if (picked.clear) {
+    activeSessionOverride = null;
+    currentSessionId = ''; // force the poller back to the newest session
     poll();
     return;
   }
 
-  // Case 4: Schedule retry
-  if (retryTimer) clearTimeout(retryTimer);
-  retryTimer = setTimeout(() => {
-    cachedTranscripts = null;
-    const freshActive = scanSessions();
-    const freshCold = getCachedTranscripts();
-    const freshSeen = new Set<string>();
-    const freshAll: Array<{ sessionId: string; cwd: string }> = [];
-    for (const s of freshActive) { if (!freshSeen.has(s.sessionId)) { freshSeen.add(s.sessionId); freshAll.push(s); } }
-    for (const s of freshCold) { if (!freshSeen.has(s.sessionId)) { freshSeen.add(s.sessionId); freshAll.push(s); } }
+  if (!picked.sessionId || !picked.cwd) return;
+  const tp = path.join(claudeDir(), 'projects', encodeProjectPath(picked.cwd), picked.sessionId + '.jsonl');
+  if (!fs.existsSync(tp)) {
+    vscode.window.showWarningMessage(
+      zh ? '该会话的转录文件已不存在。' : 'That session transcript no longer exists.'
+    );
+    return;
+  }
+  activeSessionOverride = { sessionId: picked.sessionId, cwd: picked.cwd };
+  poll();
+}
 
-    for (const s of freshAll) {
-      const title = getSessionTitle(s);
-      if (title && title === label && s.sessionId !== currentSessionId) {
-        idleByUserChoice = false;
-        activeSessionOverride = s;
-        currentTitle = title;
-        lastFileSize = 0;
-        budgetWarned = false;
-        poll();
-        return;
-      }
-    }
-    retryTimer = setTimeout(() => {
-      cachedTranscripts = null;
-      const freshActive2 = scanSessions();
-      const freshCold2 = getCachedTranscripts();
-      const freshSeen2 = new Set<string>();
-      const freshAll2: Array<{ sessionId: string; cwd: string }> = [];
-      for (const s of freshActive2) { if (!freshSeen2.has(s.sessionId)) { freshSeen2.add(s.sessionId); freshAll2.push(s); } }
-      for (const s of freshCold2) { if (!freshSeen2.has(s.sessionId)) { freshSeen2.add(s.sessionId); freshAll2.push(s); } }
+// ─── Pricing refresh ───────────────────────────────────────
+const PRICING_REFRESH_INTERVAL_MS = 6 * 60 * 60 * 1000;
+let pricingAutoUpdateActive = false;
 
-      for (const s of freshAll2) {
-        const title = getSessionTitle(s);
-        if (title && title === label && s.sessionId !== currentSessionId) {
-          idleByUserChoice = false;
-          activeSessionOverride = s;
-          currentTitle = title;
-          lastFileSize = 0;
-          budgetWarned = false;
-          poll();
-          return;
-        }
-      }
-      resetState();
-      updateStatusBar();
-    }, 2000);
-  }, 1000);
+/**
+ * Keep the catalog and exchange rates fresh while the editor stays open.
+ * The catalog itself is cached for 24h inside checkForUpdates(), so the 6h
+ * tick only costs a rate fetch on most runs.
+ */
+function startPricingRefresh(): void {
+  const enabled = vscode.workspace
+    .getConfiguration('claudeTokenMonitor')
+    .get<boolean>('pricing.autoUpdate', true);
+
+  if (!enabled) {
+    if (pricingRefreshTimer) { clearInterval(pricingRefreshTimer); pricingRefreshTimer = null; }
+    pricingAutoUpdateActive = false;
+    return;
+  }
+  if (pricingAutoUpdateActive && pricingRefreshTimer) return;
+
+  pricingAutoUpdateActive = true;
+  checkForUpdates(currentConfig.pricingUpdateUrl || undefined)
+    .catch((err) => console.warn('[TokenMonitor] Pricing refresh failed:', err));
+  pricingRefreshTimer = setInterval(() => {
+    checkForUpdates(currentConfig.pricingUpdateUrl || undefined)
+      .catch((err) => console.warn('[TokenMonitor] Pricing refresh failed:', err));
+  }, PRICING_REFRESH_INTERVAL_MS);
 }
 
 // ─── Config refresh ─────────────────────────────────────────
@@ -1044,17 +1164,79 @@ function refreshConfig(): void {
     checkForUpdates(currentConfig.pricingUpdateUrl || undefined, true);
   }
 
-  // Poll interval change → restart timer
+  // Poll interval change → restart timers
   if (currentConfig.pollIntervalMs !== oldPollMs) {
     if (pollTimer) {
       clearInterval(pollTimer);
       pollTimer = setInterval(poll, currentConfig.pollIntervalMs);
     }
+    if (standaloneSyncTimer) {
+      clearInterval(standaloneSyncTimer);
+      standaloneSyncTimer = setInterval(() => {
+        if (standalonePanel && standalonePanel.visible) pushToWebviewPanel(standalonePanel);
+      }, currentConfig.pollIntervalMs);
+    }
   }
 
   // Always refresh display after config change
+  startPricingRefresh();
   updateStatusBar();
   pushToWebview();
+}
+
+// ─── Standalone dashboard panel ───────────────────────────────
+function openStandalonePanel(): void {
+  if (standalonePanel) {
+    standalonePanel.reveal(vscode.ViewColumn.Active);
+    pushToWebviewPanel(standalonePanel);
+    try {
+      standalonePanel.webview.postMessage({ type: 'sessionList', sessions: SessionStore.getSessionList() });
+    } catch { /* panel may be disposing */ }
+    return;
+  }
+
+  const panel = vscode.window.createWebviewPanel(
+    'claudeTokenMonitorDetail',
+    t('panel.title'),
+    vscode.ViewColumn.Active,
+    { enableScripts: true, retainContextWhenHidden: true }
+  );
+  standalonePanel = panel;
+  panel.webview.html = detailPanel.getHtml();
+
+  panel.webview.onDidReceiveMessage((msg) => {
+    if (msg.type === 'ready') {
+      pushToWebviewPanel(panel);
+      try {
+        panel.webview.postMessage({ type: 'sessionList', sessions: SessionStore.getSessionList() });
+      } catch { /* */ }
+    } else if (msg.type === 'openSettings') {
+      vscode.commands.executeCommand('workbench.action.openSettings', '@ext:' + extensionId);
+    } else if (msg.type === 'setTimeRange') {
+      handleSetTimeRange(msg.timeRange as TimeRange, panel.webview.postMessage.bind(panel.webview));
+    } else if (msg.type === 'selectSession') {
+      handleSelectSession(msg.sessionId!, panel.webview.postMessage.bind(panel.webview));
+    } else if (msg.type === 'clearSessionSelection') {
+      handleClearSessionSelection();
+      pushToWebviewPanel(panel);
+    }
+  });
+
+  panel.onDidDispose(() => {
+    if (standaloneSyncTimer) {
+      clearInterval(standaloneSyncTimer);
+      standaloneSyncTimer = null;
+    }
+    if (standalonePanel === panel) standalonePanel = null;
+  });
+
+  pushToWebviewPanel(panel);
+
+  standaloneSyncTimer = setInterval(() => {
+    if (standalonePanel && standalonePanel.visible) {
+      pushToWebviewPanel(standalonePanel);
+    }
+  }, currentConfig.pollIntervalMs);
 }
 
 // ─── Activation ───────────────────────────────────────────────
@@ -1066,21 +1248,21 @@ export function activate(context: vscode.ExtensionContext): void {
   currentConfig = getConfig();
   initI18n(currentConfig.language, context.extensionPath);
 
+  // Load the catalog shipped inside the VSIX first — offline must always work.
+  loadBundledPricing(context.extensionPath);
+
   // Async: scan and index existing session transcripts for cross-session views
   setTimeout(() => {
     try {
-      // Force clean rebuild: delete any previous index that may have inflated/buggy data
-      const indexPath = path.join(tokenTrackerDir(), 'sessions.json');
-      try { fs.unlinkSync(indexPath); } catch { /* doesn't exist yet */ }
-      SessionStore.scanAndIndex();
-      console.log('[TokenMonitor] Session index rebuilt (' + Object.keys(SessionStore.loadIndex().sessions).length + ' sessions)');
+      SessionStore.scanAndIndex(currentConfig.customModels);
+      console.log('[TokenMonitor] Session index scanned (' + Object.keys(SessionStore.loadIndex().sessions).length + ' sessions)');
     } catch (err) { console.error('[TokenMonitor] scanAndIndex error:', err); }
   }, 800);
 
-  // Async: check for pricing/rates updates (non-blocking)
-  checkForUpdates(currentConfig.pricingUpdateUrl || undefined);
+  // Async: check for pricing/rates updates (non-blocking) and keep them fresh
+  startPricingRefresh();
 
-  console.log(`[TokenMonitor] v0.12.2 activating (${currentConfig.resolvedLanguage}/${currentConfig.resolvedCurrency})...`);
+  console.log(`[TokenMonitor] v1.3.0 activating (${currentConfig.resolvedLanguage}/${currentConfig.resolvedCurrency})...`);
 
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   statusBarItem.name = 'Claude Code Token Monitor';
@@ -1111,45 +1293,16 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
   context.subscriptions.push(
-    vscode.commands.registerCommand('claudeCodeTokenMonitor.showDetailPanel', () => {
-      // Open as a standalone editor tab (not buried in the bottom panel)
-      const panel = vscode.window.createWebviewPanel(
-        'claudeTokenMonitorDetail',
-        t('panel.title'),
-        vscode.ViewColumn.Active,
-        { enableScripts: true, retainContextWhenHidden: true }
-      );
-      panel.webview.html = detailPanel.getHtml();
-      // Listen for ready message and push current data
-      panel.webview.onDidReceiveMessage((msg) => {
-        if (msg.type === 'ready') {
-          pushToWebviewPanel(panel);
-          // Push session list for the dropdown
-          try {
-            panel.webview.postMessage({ type: 'sessionList', sessions: SessionStore.getSessionList() });
-          } catch { /* */ }
-        } else if (msg.type === 'openSettings') {
-          vscode.commands.executeCommand('workbench.action.openSettings', '@ext:' + extensionId);
-        } else if (msg.type === 'setTimeRange') {
-          handleSetTimeRange(msg.timeRange as TimeRange, panel.webview.postMessage.bind(panel.webview));
-        } else if (msg.type === 'selectSession') {
-          handleSelectSession(msg.sessionId!, panel.webview.postMessage.bind(panel.webview));
-        } else if (msg.type === 'clearSessionSelection') {
-          handleClearSessionSelection();
-          pushToWebviewPanel(panel);
-        }
-      });
-      // Also push immediately
-      pushToWebviewPanel(panel);
-      // Keep in sync with poll updates
-      const syncInterval = setInterval(() => {
-        if (panel.visible) pushToWebviewPanel(panel);
-      }, currentConfig.pollIntervalMs);
-      panel.onDidDispose(() => clearInterval(syncInterval));
-    })
+    vscode.commands.registerCommand('claudeCodeTokenMonitor.showDetailPanel', () => openStandalonePanel())
   );
   context.subscriptions.push(
-    vscode.commands.registerCommand('claudeCodeTokenMonitor.refresh', () => { lastFileSize = 0; poll(); })
+    vscode.commands.registerCommand('claudeCodeTokenMonitor.selectSession', () => selectSessionToMonitor())
+  );
+  context.subscriptions.push(
+    vscode.commands.registerCommand('claudeCodeTokenMonitor.refresh', () => {
+      resetSessionData();
+      poll();
+    })
   );
   context.subscriptions.push(
     vscode.commands.registerCommand('claudeCodeTokenMonitor.showLastMessageCost', () => {
@@ -1224,37 +1377,17 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
-  // Tab switching: prefer e.changed (instant), fallback to activeTabGroup (cross-group re-focus)
-  context.subscriptions.push(
-    vscode.window.tabGroups.onDidChangeTabs((e) => {
-      let label = e.changed.find(t => t.isActive)?.label;
-      if (!label) {
-        label = vscode.window.tabGroups.activeTabGroup?.activeTab?.label;
-      }
-      if (label) handleTabChange(label);
-    })
-  );
-
   // Initial poll
   poll();
   pollTimer = setInterval(poll, currentConfig.pollIntervalMs);
-
-  // Cross-group tab focus detection (1s interval — catches alternating re-clicks
-  // that onDidChangeTabs may miss when the target tab was already active in its group)
-  const focusCheckTimer = setInterval(() => {
-    if (idleByUserChoice || !currentSessionId) return;
-    const label = vscode.window.tabGroups.activeTabGroup?.activeTab?.label;
-    if (label && label !== 'Claude Code' && label !== currentTitle) {
-      handleTabChange(label);
-    }
-  }, 250);
-  context.subscriptions.push({ dispose: () => clearInterval(focusCheckTimer) });
 
   console.log('[TokenMonitor] Activated.');
 }
 
 export function deactivate(): void {
   if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
-  if (retryTimer) { clearTimeout(retryTimer); retryTimer = null; }
+  if (standaloneSyncTimer) { clearInterval(standaloneSyncTimer); standaloneSyncTimer = null; }
+  if (pricingRefreshTimer) { clearInterval(pricingRefreshTimer); pricingRefreshTimer = null; }
+  if (indexRefreshTimer) { clearTimeout(indexRefreshTimer); indexRefreshTimer = null; }
   console.log('[TokenMonitor] Deactivated.');
 }

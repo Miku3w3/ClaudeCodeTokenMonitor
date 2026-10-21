@@ -1,17 +1,31 @@
 /**
- * Pricing auto-update fetcher.
- * Rates: open.er-api.com (primary) → GitHub CDN (fallback) → cache → built-in.
- * Providers: GitHub CDN → cache → built-in.
- * Supports HTTP CONNECT and SOCKS5 proxy via VSCode http.proxy setting.
+ * Pricing data loader / updater.
+ *
+ * Sources, in order:
+ *   1. bundled pricing.json (always available, works offline)
+ *   2. validated remote catalog (daily-updated), tried against reachable mirrors
+ *   3. last good remote cache
+ *   4. built-in table in pricing.ts
+ *
+ * The campus network blocks raw.githubusercontent.com and cdn.jsdelivr.net, so
+ * the mirror order starts with hosts verified reachable there (fastly/gcore
+ * jsDelivr, ghproxy).
  */
 import * as https from 'https';
+import * as http from 'http';
 import * as net from 'net';
 import * as tls from 'tls';
 import * as fs from 'fs';
 import * as path from 'path';
 import { tokenMonitorDir } from '../utils/paths';
-import { setCustomRates, getRatesUpdatedAt, DEFAULT_RATES, setCustomProviders } from './pricing';
-import type { Currency, ProviderMeta } from './types';
+import {
+  setCustomRates,
+  getRatesUpdatedAt,
+  DEFAULT_RATES,
+  setPricingCatalog,
+  getPricingUpdatedAt,
+} from './pricing';
+import type { PricingCatalog } from './types';
 import * as vscode from 'vscode';
 
 const RATE_API_URLS = [
@@ -19,45 +33,43 @@ const RATE_API_URLS = [
   'https://api.exchangerate-api.com/v6/latest/USD',
 ];
 
-/** Convert remote provider format (name/currency/models) to internal ProviderMeta[]. */
-function applyRemoteProviders(remote: Array<{ name: string; currency: string; models: Record<string, { cacheHit: number; cacheMiss: number; output: number }> }>): void {
-  const converted: ProviderMeta[] = remote.map(r => {
-    const clean: Record<string, { cacheHit: number; cacheMiss: number; output: number }> = {};
-    for (const [model, pricing] of Object.entries(r.models || {})) {
-      const cacheHit = Number(pricing?.cacheHit);
-      const cacheMiss = Number(pricing?.cacheMiss);
-      const output = Number(pricing?.output);
-      // Skip models with obviously bad data
-      if (!Number.isFinite(cacheHit) || !Number.isFinite(cacheMiss) || !Number.isFinite(output)) continue;
-      if (cacheHit < 0 || cacheMiss < 0 || output < 0) continue;
-      if (cacheHit === 0 && cacheMiss === 0 && output === 0) continue;
-      clean[model] = { cacheHit, cacheMiss, output };
-    }
-    return {
-      name: r.name,
-      nativeCurrency: r.currency as Currency,
-      models: clean,
-      matchPattern: new RegExp(r.name.replace(/\s+/g, ''), 'i'),
-    };
-  });
-  setCustomProviders(converted.filter(p => Object.keys(p.models).length > 0));
-}
-
+const REPO = 'Miku3w3/ClaudeCodeUsage';
+const RAW = `https://raw.githubusercontent.com/${REPO}/master/pricing.json`;
 const PROVIDER_URLS = [
-  'https://cdn.jsdelivr.net/gh/Miku3w3/ClaudeCodeUsage@master/pricing.json',
-  'https://raw.githubusercontent.com/Miku3w3/ClaudeCodeUsage/master/pricing.json',
+  `https://fastly.jsdelivr.net/gh/${REPO}@master/pricing.json`,
+  `https://gcore.jsdelivr.net/gh/${REPO}@master/pricing.json`,
+  `https://ghproxy.net/${RAW}`,
+  `https://gh-proxy.com/${RAW}`,
+  RAW,
+  `https://cdn.jsdelivr.net/gh/${REPO}@master/pricing.json`,
 ];
 const CACHE_TTL = 24 * 60 * 60 * 1000;
 const FETCH_TIMEOUT = 8000;
+/** Hard ceiling for one refresh cycle, so seven dead mirrors cannot take minutes. */
+const TOTAL_FETCH_BUDGET = 20_000;
+
+function remainingMs(deadline: number): number {
+  return Math.max(0, deadline - Date.now());
+}
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
+}
 
 function cachePath(): string { return path.join(tokenMonitorDir(), 'pricing-cache.json'); }
 
 /** Fetch exchange rates from free API (no key required). Returns {USD,CNY,...} or null. */
-async function fetchRatesFromAPI(): Promise<Record<string, number> | null> {
+async function fetchRatesFromAPI(timeoutMs: number = FETCH_TIMEOUT): Promise<Record<string, number> | null> {
   for (const url of RATE_API_URLS) {
+    if (timeoutMs <= 0) return null;
     try {
       const data = await new Promise<string>((resolve, reject) => {
-        https.get(url, { timeout: FETCH_TIMEOUT }, (res) => {
+        https.get(url, { timeout: timeoutMs }, (res) => {
           if (res.statusCode !== 200) { res.resume(); return reject(new Error('status')); }
           let d = '';
           res.on('data', (c: string) => { d += c; });
@@ -74,11 +86,16 @@ async function fetchRatesFromAPI(): Promise<Record<string, number> | null> {
 }
 
 export interface RemotePricing {
-  version: number; updatedAt: string; rates?: Record<string, number>;
-  providers?: Array<{ name: string; currency: string; models: Record<string, { cacheHit: number; cacheMiss: number; output: number }> }>;
+  schemaVersion?: number;
+  version?: number;
+  updatedAt?: string;
+  rates?: Record<string, number>;
+  providers?: any[];
+  [key: string]: any;
 }
 
-// SOCKS5 tunnel (for Clash mixed-mode proxies)
+// ── Proxy tunnels (for Clash mixed-mode proxies) ─────────────────
+
 function socks5Connect(proxyHost: string, proxyPort: number, targetHost: string, targetPort: number): Promise<net.Socket> {
   return new Promise((resolve, reject) => {
     const socket = new net.Socket();
@@ -115,13 +132,21 @@ function httpConnect(proxyHost: string, proxyPort: number, targetHost: string, t
   });
 }
 
-function tlsRequest(socket: net.Socket, parsed: URL): Promise<RemotePricing | null> {
+function tlsRequest(socket: net.Socket, parsed: URL): Promise<any | null> {
   return new Promise((resolve) => {
-    const tlsSocket = tls.connect({ socket, host: parsed.hostname, servername: parsed.hostname, rejectUnauthorized: false }, () => {
-      tlsSocket.write(`GET ${parsed.pathname}${parsed.search} HTTP/1.1\r\nHost: ${parsed.hostname}\r\nUser-Agent: CCTM/1.0\r\nConnection: close\r\n\r\n`);
+    const tlsSocket = tls.connect({
+      socket,
+      host: parsed.hostname,
+      servername: parsed.hostname,
+      rejectUnauthorized: true,
+    }, () => {
+      tlsSocket.write(`GET ${parsed.pathname}${parsed.search} HTTP/1.1\r\nHost: ${parsed.hostname}\r\nUser-Agent: CCTM/1.3.0\r\nAccept: application/json\r\nConnection: close\r\n\r\n`);
       let body = '';
       tlsSocket.on('data', (chunk: Buffer) => { body += chunk.toString(); });
-      tlsSocket.on('end', () => { const json = body.split('\r\n\r\n').slice(1).join('\r\n\r\n'); try { resolve(JSON.parse(json)); } catch { resolve(null); } });
+      tlsSocket.on('end', () => {
+        const json = body.split('\r\n\r\n').slice(1).join('\r\n\r\n');
+        try { resolve(JSON.parse(json)); } catch { resolve(null); }
+      });
       tlsSocket.on('error', () => resolve(null));
     });
     tlsSocket.on('error', () => resolve(null));
@@ -129,8 +154,19 @@ function tlsRequest(socket: net.Socket, parsed: URL): Promise<RemotePricing | nu
   });
 }
 
-async function fetchWithProxy(urlStr: string, proxyUrl: string): Promise<RemotePricing | null> {
-  const parsed = new URL(urlStr);
+async function fetchWithProxy(urlStr: string, proxyUrl: string, timeoutMs: number = FETCH_TIMEOUT): Promise<any | null> {
+  if (timeoutMs <= 0) return null;
+  let parsed: URL;
+  try {
+    parsed = new URL(urlStr);
+  } catch {
+    return null;
+  }
+  // Plain HTTP custom sources (for example a LAN/Alibaba server on a
+  // non-standard port) are fetched directly; the SOCKS5/CONNECT tunnel below
+  // only speaks TLS.
+  if (parsed.protocol === 'http:') return fetchDirect(urlStr, timeoutMs);
+
   const proxy = new URL(proxyUrl);
   const h = proxy.hostname, p = parseInt(proxy.port) || 7890;
   for (const fn of [() => socks5Connect(h, p, parsed.hostname, 443), () => httpConnect(h, p, parsed.hostname, 443)]) {
@@ -139,73 +175,188 @@ async function fetchWithProxy(urlStr: string, proxyUrl: string): Promise<RemoteP
   return null;
 }
 
-function fetchDirect(urlStr: string): Promise<RemotePricing | null> {
+function fetchDirect(urlStr: string, timeoutMs: number = FETCH_TIMEOUT): Promise<any | null> {
+  if (timeoutMs <= 0) return Promise.resolve(null);
+  let parsed: URL;
+  try {
+    parsed = new URL(urlStr);
+  } catch {
+    return Promise.resolve(null);
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    return Promise.resolve(null);
+  }
+  const mod = parsed.protocol === 'http:' ? http : https;
   return new Promise((resolve) => {
-    https.get(urlStr, { timeout: FETCH_TIMEOUT }, (res) => {
-      if (res.statusCode !== 200) { res.resume(); return resolve(null); }
-      let data = '';
-      res.on('data', (chunk: string) => { data += chunk; });
-      res.on('end', () => { try { resolve(JSON.parse(data)); } catch { resolve(null); } });
-    }).on('error', () => resolve(null)).on('timeout', function (this: any) { this.destroy(); resolve(null); });
+    try {
+      mod.get(urlStr, { timeout: timeoutMs }, (res) => {
+        if (res.statusCode !== 200) { res.resume(); return resolve(null); }
+        let data = '';
+        res.on('data', (chunk: string) => { data += chunk; });
+        res.on('end', () => { try { resolve(JSON.parse(data)); } catch { resolve(null); } });
+      }).on('error', () => resolve(null)).on('timeout', function (this: any) { this.destroy(); resolve(null); });
+    } catch {
+      resolve(null);
+    }
   });
 }
 
-export async function checkForUpdates(customUrl?: string, force = false): Promise<void> {
-  const cacheFile = cachePath();
+// ── Catalog validation ───────────────────────────────────────────
 
-  // Rates: always try to fetch fresh from API (free, fast, no key needed).
-  // Fails silently — if offline, we use whatever was last set (or built-in defaults).
-  if (!customUrl) {
-    const apiRates = await fetchRatesFromAPI();
-    if (apiRates) {
-      setCustomRates(apiRates, Date.now());
-      console.log('[TokenMonitor] Exchange rates updated from API');
+/**
+ * A remote catalog replaces the bundled one only when it is clearly complete.
+ * (The old updater occasionally published files whose only entry was "error";
+ * accepting those would erase every price.)
+ */
+function isUsableCatalog(catalog: any, minProviders: number): boolean {
+  if (!catalog || !Array.isArray(catalog.providers)) return false;
+  // Only the v2 schema is trusted. Legacy files produced by the old AI-scraper
+  // (nested shape, "error" models) must not overwrite the curated catalog.
+  if (Number(catalog.schemaVersion) !== 2) return false;
+  const usable = catalog.providers.filter((p: any) => {
+    if (!p || !p.models || typeof p.models !== 'object') return false;
+    return Object.values(p.models).some((m: any) => {
+      if (!m || typeof m !== 'object') return false;
+      const flat = m.input && typeof m.input === 'object' ? m.input : m;
+      const output = Number(flat.output ?? m.output);
+      const cacheMiss = Number(flat.cacheMiss);
+      const cacheHit = Number(flat.cacheHit);
+      return Number.isFinite(output) && Number.isFinite(cacheMiss) && Number.isFinite(cacheHit)
+        && (output > 0 || cacheMiss > 0 || cacheHit > 0);
+    });
+  });
+  return usable.length >= minProviders;
+}
+
+function applyCatalog(catalog: any): boolean {
+  return setPricingCatalog(catalog as PricingCatalog);
+}
+
+function combinedCatalog(remote: any): any {
+  // Legacy files put per-currency in `currency`; the catalog sanitizer accepts
+  // both that and `nativeCurrency`, so no conversion is needed here. Keep the
+  // exchange rates attached for the cache fallback.
+  return remote;
+}
+
+/** Load the pricing.json shipped inside the VSIX (or repo root in dev). */
+export function loadBundledPricing(extensionPath: string): boolean {
+  const candidates = [
+    path.join(extensionPath, 'pricing.json'),
+    path.join(extensionPath, '..', 'pricing.json'),
+  ];
+  for (const file of candidates) {
+    try {
+      if (!fs.existsSync(file)) continue;
+      const parsed = JSON.parse(fs.readFileSync(file, 'utf-8'));
+      if (!isUsableCatalog(parsed, 3)) {
+        console.warn(`[TokenMonitor] Bundled pricing ignored (not enough providers): ${file}`);
+        continue;
+      }
+      if (applyCatalog(parsed)) {
+        console.log(`[TokenMonitor] Bundled pricing loaded: ${file} (${parsed.updatedAt || 'no date'})`);
+        return true;
+      }
+    } catch (err) {
+      console.warn(`[TokenMonitor] Failed to load bundled pricing ${file}: ${String(err)}`);
     }
   }
+  return false;
+}
 
-  // Providers: check cache first, then GitHub
+// ── Public updater ───────────────────────────────────────────────
+
+export async function checkForUpdates(customUrl?: string, force = false): Promise<void> {
+  const cacheFile = cachePath();
+  const trimmedUrl = (customUrl || '').trim();
+  if (trimmedUrl && !isHttpUrl(trimmedUrl)) {
+    console.warn(`[TokenMonitor] Ignoring invalid pricing.updateUrl: ${trimmedUrl}`);
+    return;
+  }
+  const sourceUrl = trimmedUrl || undefined;
+  const deadline = Date.now() + TOTAL_FETCH_BUDGET;
+
+  // Rates: always try to fetch fresh from API (free, fast, no key needed).
+  // This used to be skipped whenever a custom catalog URL was configured,
+  // which left custom-hosted catalogs with stale exchange rates.
+  const apiRates = await fetchRatesFromAPI(Math.min(FETCH_TIMEOUT, remainingMs(deadline)));
+  if (apiRates) {
+    setCustomRates(apiRates, Date.now());
+    console.log('[TokenMonitor] Exchange rates updated from API');
+  }
+
+  // Catalog: check cache first, then the mirror list. A cache produced for a
+  // different custom URL must not win, otherwise switching updateUrl appears
+  // to do nothing for 24 hours.
   if (!force) {
     try {
       const stat = fs.statSync(cacheFile);
-      if (Date.now() - stat.mtimeMs < CACHE_TTL) {
-        const cached = JSON.parse(fs.readFileSync(cacheFile, 'utf-8'));
-        if (cached?.providers) { applyRemoteProviders(cached.providers); }
-        // Also try rates from cache if API failed (but API should work most of the time)
-        if (!getRatesUpdatedAt() && cached?.rates) { setCustomRates(cached.rates, stat.mtimeMs); }
-        return;
+      const cached = JSON.parse(fs.readFileSync(cacheFile, 'utf-8'));
+      const cacheMatchesSource = !sourceUrl || cached?.source === sourceUrl;
+      if (Date.now() - stat.mtimeMs < CACHE_TTL && cacheMatchesSource) {
+        const catalog = combinedCatalog(cached);
+        if (isUsableCatalog(catalog, sourceUrl ? 1 : 3) && applyCatalog(catalog)) {
+          if (!getRatesUpdatedAt() && cached?.rates) { setCustomRates(cached.rates, stat.mtimeMs); }
+          return;
+        }
       }
     } catch { /* cache missing */ }
   }
 
-  const providerUrls = customUrl ? [customUrl] : PROVIDER_URLS;
+  const providerUrls = sourceUrl ? [sourceUrl] : PROVIDER_URLS;
   const proxyUrl = vscode.workspace.getConfiguration('http').get<string>('proxy') || '';
   let remote: RemotePricing | null = null;
+  let source = '';
+
   for (const url of providerUrls) {
-    if (proxyUrl && proxyUrl.startsWith('http')) { remote = await fetchWithProxy(url, proxyUrl); if (remote) break; }
-    remote = await fetchDirect(url);
-    if (remote) break;
+    const budgetLeft = remainingMs(deadline);
+    if (budgetLeft <= 0) {
+      console.warn('[TokenMonitor] Pricing refresh exceeded its time budget; keeping the current catalog');
+      break;
+    }
+    const timeoutMs = Math.min(FETCH_TIMEOUT, budgetLeft);
+    if (proxyUrl && proxyUrl.startsWith('http')) {
+      remote = await fetchWithProxy(url, proxyUrl, timeoutMs);
+      if (remote) { source = url; break; }
+    }
+    remote = await fetchDirect(url, timeoutMs);
+    if (remote) { source = url; break; }
   }
 
   if (remote) {
-    // If API failed for rates, use GitHub rates as fallback
-    if (!getRatesUpdatedAt() && remote.rates) { setCustomRates(remote.rates, Date.now()); }
-    if (remote.providers) { applyRemoteProviders(remote.providers); console.log('[TokenMonitor] Model pricing updated from GitHub'); }
-    try {
-      fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
-      fs.writeFileSync(cacheFile, JSON.stringify({ ...remote, version: 2, updatedAt: new Date().toISOString() }, null, 2), 'utf-8');
-    } catch { /* */ }
-    return;
+    const catalog = combinedCatalog(remote);
+    const minProviders = sourceUrl ? 1 : 3;
+    if (!isUsableCatalog(catalog, minProviders)) {
+      console.warn(`[TokenMonitor] Remote pricing rejected (incomplete): ${source}`);
+    } else if (applyCatalog(catalog)) {
+      if (!getRatesUpdatedAt() && remote.rates) { setCustomRates(remote.rates, Date.now()); }
+      console.log(`[TokenMonitor] Model pricing updated: ${source} (${remote.updatedAt || getPricingUpdatedAt() || 'no date'})`);
+      try {
+        fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
+        const cachePayload = {
+          schemaVersion: 2,
+          updatedAt: remote.updatedAt || new Date().toISOString(),
+          providers: remote.providers,
+          rates: remote.rates,
+          source,
+        };
+        fs.writeFileSync(cacheFile, JSON.stringify(cachePayload, null, 2), 'utf-8');
+      } catch { /* cache write is best effort */ }
+      return;
+    }
   }
 
   // Fallback: cached data
   try {
     const cached = JSON.parse(fs.readFileSync(cacheFile, 'utf-8'));
     if (!getRatesUpdatedAt() && cached?.rates) { const stat = fs.statSync(cacheFile); setCustomRates(cached.rates, stat.mtimeMs); }
-    if (cached?.providers) { applyRemoteProviders(cached.providers); }
-    if (getRatesUpdatedAt() || cached?.providers) return;
+    if (cached?.providers && isUsableCatalog(cached, sourceUrl ? 1 : 3)) {
+      applyCatalog(cached);
+      console.log('[TokenMonitor] Using cached pricing data');
+      return;
+    }
   } catch { /* */ }
 
-  // Ultimate fallback
   if (!getRatesUpdatedAt()) { setCustomRates(DEFAULT_RATES, 1); }
-  console.log('[TokenMonitor] Using built-in defaults (all sources unavailable)');
+  console.log('[TokenMonitor] Using bundled pricing (all remote sources unavailable)');
 }

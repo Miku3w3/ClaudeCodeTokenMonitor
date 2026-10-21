@@ -1,6 +1,7 @@
 // DetailPanel — VSCode WebviewView provider for the token usage panel.
 // v0.12.0: Filter bar with time range + session selection + by-model grouping.
 import * as vscode from 'vscode';
+import * as crypto from 'crypto';
 import type { PerMessageStats, AggregatedData, SessionIndexEntry, ModelStatEntry } from '../model/types';
 
 export interface PanelData {
@@ -82,8 +83,6 @@ export class DetailPanel implements vscode.WebviewViewProvider {
       }
     });
 
-    webviewView.show?.(true);
-
     if (this.pendingData) {
       this.sendToWebview(this.pendingData);
     }
@@ -118,6 +117,13 @@ export class DetailPanel implements vscode.WebviewViewProvider {
       type: t('panel.type'),
       user: t('panel.user'),
       ai: t('panel.ai'),
+      mainAgent: t('panel.mainAgent'),
+      subagent: t('panel.subagent'),
+      agentSplit: t('panel.agentSplit'),
+      agentBreakdown: t('panel.agentBreakdown'),
+      filterAllAgents: t('panel.filter.allAgents'),
+      filterMainOnly: t('panel.filter.mainOnly'),
+      filterSubOnly: t('panel.filter.subOnly'),
       input: t('panel.input'),
       cache: t('panel.cache'),
       output: t('panel.output'),
@@ -206,6 +212,13 @@ export class DetailPanel implements vscode.WebviewViewProvider {
       type: t('panel.type'),
       user: t('panel.user'),
       ai: t('panel.ai'),
+      mainAgent: t('panel.mainAgent'),
+      subagent: t('panel.subagent'),
+      agentSplit: t('panel.agentSplit'),
+      agentBreakdown: t('panel.agentBreakdown'),
+      filterAllAgents: t('panel.filter.allAgents'),
+      filterMainOnly: t('panel.filter.mainOnly'),
+      filterSubOnly: t('panel.filter.subOnly'),
       input: t('panel.input'),
       cache: t('panel.cache'),
       output: t('panel.output'),
@@ -235,12 +248,14 @@ export class DetailPanel implements vscode.WebviewViewProvider {
     };
     const strJson = JSON.stringify(STR);
     const dirAttr = isRTL ? ' dir="rtl"' : '';
+    const nonce = crypto.randomBytes(16).toString('base64');
 
     return `<!DOCTYPE html>
 <html lang="${lang}"${dirAttr}>
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; img-src data:; style-src 'unsafe-inline'; script-src 'nonce-${nonce}';">
 <title>${t('panel.title')}</title>
 <style>
   :root {
@@ -268,7 +283,7 @@ export class DetailPanel implements vscode.WebviewViewProvider {
   .stat-card .label { font-size: 10px; color: var(--muted); letter-spacing: 0.5px; margin-bottom: 4px; }
   .stat-card .value { font-size: 16px; font-weight: 700; color: var(--accent); }
   .stat-card .value.cost { color: var(--accent2); }
-  .table-container { max-height: 400px; overflow-y: auto; border: 1px solid var(--border); border-radius: 4px; }
+  .table-container { max-height: 400px; overflow-y: auto; overflow-x: auto; border: 1px solid var(--border); border-radius: 4px; }
   table { width: 100%; border-collapse: collapse; }
   thead { position: sticky; top: 0; background: var(--bg); z-index: 1; }
   th { font-size: 10px; font-weight: 600; color: var(--muted); padding: 6px 8px; text-align: right; border-bottom: 2px solid var(--border); }
@@ -303,10 +318,32 @@ export class DetailPanel implements vscode.WebviewViewProvider {
   .filter-toggle input { margin: 0; cursor: pointer; }
   .session-summary-row { cursor: pointer; }
   .session-summary-row:hover td { background: var(--card-bg); }
+  /* v1.3.0 main/subagent split */
+  .agent-chip { display: inline-block; margin-left: 4px; padding: 0 4px; border-radius: 3px; background: var(--bg); border: 1px solid var(--border); color: var(--accent2); font-size: 9px; font-family: ui-monospace, monospace; vertical-align: middle; }
+  .agent-split { margin-bottom: 10px; padding: 8px 10px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 6px; }
+  .agent-split-head { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); margin-bottom: 5px; }
+  .agent-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--border); }
+  .agent-bar-main { background: var(--accent); height: 100%; }
+  .agent-bar-sub { background: var(--accent2); height: 100%; }
+  .agent-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 5px; font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .agent-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 3px; vertical-align: middle; }
+  .row-subagent td:first-child { color: var(--accent2); font-weight: 600; }
+  .agent-breakdown { margin-top: 4px; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+  .agent-breakdown table { width: 100%; border-collapse: collapse; }
+  .agent-breakdown th, .agent-breakdown td { padding: 3px 6px; font-size: 10px; }
+  .agent-breakdown th:first-child, .agent-breakdown td:first-child { text-align: left; }
+  .empty-row td { text-align: center !important; color: var(--muted); padding: 16px !important; }
+  /* Narrow side panels */
+  @media (max-width: 380px) {
+    th, td { padding: 3px 4px; }
+    .cell-time { display: none; }
+    .agent-legend { gap: 2px 8px; }
+    .agent-split { padding: 6px 8px; }
+  }
 </style>
 </head>
 <body>
-<button class="settings-btn" onclick="openSettings()" title="Open extension settings">&#9881; ${t('panel.settings')}</button>
+<button class="settings-btn" data-action="settings" title="Open extension settings">&#9881; ${t('panel.settings')}</button>
 <div id="filter-bar"></div>
 <div id="app">
   <div class="idle">
@@ -315,7 +352,7 @@ export class DetailPanel implements vscode.WebviewViewProvider {
   </div>
 </div>
 
-<script>
+<script nonce="${nonce}">
 const vscode = acquireVsCodeApi();
 let sessionData = null;
 
@@ -333,6 +370,7 @@ let isPaused = false;
 // v0.12.0 filter state
 let currentTimeRange = 'current';
 let isGroupByModel = false;
+let currentAgentFilter = 'all';
 let selectedSessionId = null;
 let aggregatedData = null;
 let sessionList = [];
@@ -342,6 +380,11 @@ try { renderFilterBar(); } catch(e) { console.error('renderFilterBar error:', e)
 
 function toggleModelDetail(idx) {
   var el = document.getElementById('modelDetail-' + idx);
+  if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+}
+
+function toggleAgentBreakdown() {
+  var el = document.getElementById('agentBreakdown');
   if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
 }
 
@@ -374,6 +417,11 @@ function renderFilterBar() {
   var html = '<div class="filter-bar" style="display:flex;align-items:stretch;gap:6px;flex-wrap:wrap">' +
     '<div class="filter-tabs" id="filterTabs" style="display:flex;gap:4px">' + tabsHtml + '</div>' +
     '<select id="sessionSelect" class="filter-select" style="min-width:100px;' + btnStyle + '"><option value="">' + STR.filterAllSessions + '</option></select>' +
+    '<select id="agentSelect" class="filter-select" style="min-width:92px;' + btnStyle + '">' +
+      '<option value="all">' + STR.filterAllAgents + '</option>' +
+      '<option value="main">' + STR.filterMainOnly + '</option>' +
+      '<option value="sub">' + STR.filterSubOnly + '</option>' +
+    '</select>' +
     '<label id="byModelLabel" class="' + byModelCls + '" style="display:flex;align-items:center;gap:3px;white-space:nowrap;' + btnStyle + '">' +
       '<input type="checkbox" id="byModelCheck" ' + byModelChecked + ' style="margin:0"> ' + STR.filterByModel +
     '</label>' +
@@ -409,6 +457,16 @@ function renderFilterBar() {
   // By-model checkbox onchange
   var cb = document.getElementById('byModelCheck');
   if (cb) cb.onchange = toggleGroupByModel;
+
+  // Agent filter (all / main / sub)
+  var agentSel = document.getElementById('agentSelect');
+  if (agentSel) {
+    agentSel.value = currentAgentFilter;
+    agentSel.onchange = function() {
+      currentAgentFilter = agentSel.value || 'all';
+      if (sessionData) renderFull(sessionData);
+    };
+  }
 }
 
 function updateFilterUI() {
@@ -428,6 +486,9 @@ function updateFilterUI() {
   var sel = document.getElementById('sessionSelect');
   if (sel && selectedSessionId) sel.value = selectedSessionId;
   else if (sel && !selectedSessionId && currentTimeRange === 'current') sel.value = '';
+  // Keep the agent filter in sync after re-renders
+  var agentSel = document.getElementById('agentSelect');
+  if (agentSel) agentSel.value = currentAgentFilter;
 }
 
 function setTimeRange(tr) {
@@ -455,6 +516,22 @@ function toggleGroupByModel() {
 function openSettings() {
   vscode.postMessage({ type: 'openSettings' });
 }
+
+// CSP-safe delegated click handling (inline onclick attributes are blocked by the webview CSP)
+document.addEventListener('click', function(e) {
+  var el = e.target && e.target.closest ? e.target.closest('[data-action]') : null;
+  if (!el) return;
+  var action = el.getAttribute('data-action');
+  if (action === 'settings') {
+    openSettings();
+  } else if (action === 'toggle-model') {
+    toggleModelDetail(Number(el.getAttribute('data-model-index')));
+  } else if (action === 'toggle-agent') {
+    toggleAgentBreakdown();
+  } else if (action === 'toggle-pause') {
+    togglePause();
+  }
+});
 
 // Apply updated i18n strings dynamically without page reload
 function applyI18n(i18n) {
@@ -508,6 +585,7 @@ window.addEventListener('message', (e) => {
 });
 
 function fmtCost(c) {
+  if (!isFinite(c)) return '—';
   var sym = CURRENCY_SYMBOLS[currentCurrency] || currentCurrency;
   if (c >= 100) return sym + c.toFixed(2);
   if (c >= 1) return sym + c.toFixed(3);
@@ -565,6 +643,68 @@ function renderFull(s) {
   var cumInput = s.cumulativeInputTokens + s.cumulativeCacheReadTokens;
   var cumHitRate = cumInput > 0 ? (s.cumulativeCacheReadTokens / cumInput * 100).toFixed(1) + '%' : '0%';
 
+  // v1.3.0: split main vs subagent usage
+  var allMsgs = s.messages || [];
+  var splitMain = { tokens: 0, cost: 0, msgs: 0 };
+  var splitSub = { tokens: 0, cost: 0, msgs: 0 };
+  var agentMap = {};
+  var hasSub = false;
+  for (var mi = 0; mi < allMsgs.length; mi++) {
+    var mm = allMsgs[mi];
+    if (mm.isUserMessage) continue;
+    var mmCost = (mm.costDisplay != null ? mm.costDisplay : mm.costCNY) || 0;
+    var mmTok = (mm.inputTokens || 0) + (mm.cacheReadTokens || 0) + (mm.outputTokens || 0);
+    var bucket = mm.source === 'subagent' ? splitSub : splitMain;
+    bucket.tokens += mmTok; bucket.cost += mmCost; bucket.msgs++;
+    if (mm.source === 'subagent') {
+      hasSub = true;
+      var aid = mm.agentId || 'unknown';
+      if (!agentMap[aid]) agentMap[aid] = { id: aid, label: mm.agentLabel || aid.slice(0, 8), tokens: 0, cost: 0, msgs: 0 };
+      agentMap[aid].tokens += mmTok; agentMap[aid].cost += mmCost; agentMap[aid].msgs++;
+    }
+  }
+  var splitCostTotal = splitMain.cost + splitSub.cost;
+  var subCostPct = splitCostTotal > 0 ? splitSub.cost / splitCostTotal * 100 : 0;
+  var mainCostPct = 100 - subCostPct;
+
+  // Main/subagent split strip (only when subagent activity exists)
+  var agentSplitHtml = '';
+  if (hasSub) {
+    agentSplitHtml = '<div class="agent-split">' +
+      '<div class="agent-split-head"><span>&#129513; ' + STR.agentSplit + '</span><span>' + STR.subagent + ' ' + subCostPct.toFixed(1) + '%</span></div>' +
+      '<div class="agent-bar">' +
+        '<div class="agent-bar-main" style="width:' + mainCostPct.toFixed(1) + '%"></div>' +
+        (subCostPct > 0 ? '<div class="agent-bar-sub" style="width:' + subCostPct.toFixed(1) + '%"></div>' : '') +
+      '</div>' +
+      '<div class="agent-legend">' +
+        '<span><span class="agent-dot" style="background:var(--accent)"></span>' + STR.mainAgent + ' ' + fmtCost(splitMain.cost) + ' &middot; ' + mainCostPct.toFixed(1) + '%</span>' +
+        '<span><span class="agent-dot" style="background:var(--accent2)"></span>' + STR.subagent + ' ' + fmtCost(splitSub.cost) + ' &middot; ' + subCostPct.toFixed(1) + '%</span>' +
+      '</div>' +
+    '</div>';
+  }
+
+  // Collapsible per-agent breakdown
+  var agentBreakdownHtml = '';
+  if (hasSub) {
+    var abEl0 = document.getElementById('agentBreakdown');
+    var abOpen = !!(abEl0 && abEl0.style.display !== 'none');
+    var agentList = Object.keys(agentMap).map(function(k) { return agentMap[k]; })
+      .sort(function(a, b) { return b.cost - a.cost; });
+    agentBreakdownHtml = '<div style="margin-bottom:10px">' +
+      '<button class="model-btn" data-action="toggle-agent">&#128193; ' + STR.agentBreakdown + ' (' + agentList.length + ')</button>' +
+      '<div id="agentBreakdown" style="' + (abOpen ? 'display:block' : 'display:none') + ';margin-top:4px">' +
+        '<div class="agent-breakdown"><table><thead><tr><th>' + STR.subagent + '</th><th style="text-align:right">' + STR.messagesCount + '</th><th style="text-align:right">' + STR.totalTokens + '</th><th style="text-align:right">' + STR.cost + '</th></tr></thead><tbody>' +
+          agentList.map(function(a) {
+            return '<tr><td><span class="agent-chip" style="margin-left:0">' + esc(a.label) + '</span></td>' +
+              '<td style="text-align:right">' + a.msgs + '</td>' +
+              '<td style="text-align:right">' + fmtTokens(a.tokens) + '</td>' +
+              '<td style="text-align:right">' + fmtCost(a.cost) + '</td></tr>';
+          }).join('') +
+        '</tbody></table></div>' +
+      '</div>' +
+    '</div>';
+  }
+
   // Model stats (collapsible, only when multiple models used AND not in by-model mode)
   var modelStatsHtml = '';
   if (!isGroupByModel && s.modelStats && s.modelStats.length > 1) {
@@ -572,7 +712,7 @@ function renderFull(s) {
       s.modelStats.map(function(ms, idx) {
         var hitRate = ms.inputTokens > 0 ? (ms.cacheHits / ms.inputTokens * 100).toFixed(1) + '%' : '0%';
         return '<div style="margin-bottom:4px">' +
-          '<button class="model-btn" onclick="toggleModelDetail(' + idx + ')">' +
+          '<button class="model-btn" data-action="toggle-model" data-model-index="' + idx + '">' +
             '&#128202; ' + esc(ms.model) + ' &nbsp; ' + fmtCost(ms.cost) + ' (' + fmtTokens(ms.tokens) + ')' +
           '</button>' +
           '<div id="modelDetail-' + idx + '" style="display:none;margin:4px 0 8px 0">' +
@@ -623,37 +763,49 @@ function renderFull(s) {
     '</div>';
   }
 
+  // Agent filter (all / main only / sub only)
+  var visibleMsgs = allMsgs;
+  if (currentAgentFilter === 'main') {
+    visibleMsgs = allMsgs.filter(function(m) { return m.source !== 'subagent'; });
+  } else if (currentAgentFilter === 'sub') {
+    visibleMsgs = allMsgs.filter(function(m) { return m.source === 'subagent'; });
+  }
+
   var html =
     '<div class="header">' +
       '<h2>' + esc(s.title) + '</h2>' +
       '<div class="meta">' + STR.lastModel + ': ' + esc(s.model) + ' | ' + s.messageCount + ' ' + STR.messagesCount + '</div>' +
     '</div>' +
-    statsHtml + modelStatsHtml +
+    statsHtml + agentSplitHtml + modelStatsHtml + agentBreakdownHtml +
     '<div class="table-container"><table>' +
       '<thead><tr><th>#</th><th>' + STR.type + '</th><th>' + STR.modelLabel + '</th><th>' + STR.totalInput + '</th><th>' + STR.cacheHits + '</th><th>' + STR.cacheMiss + '</th><th>' + STR.output + '</th><th>' + STR.hitRate + '</th><th>' + STR.cost + '</th><th>' + STR.thinking + '</th></tr></thead>' +
       '<tbody>' +
-        s.messages.map(function(m, i) {
-          var cls = m.isUserMessage ? 'row-user' : 'row-assistant';
-          var type = m.isUserMessage ? STR.user : STR.ai;
+        (visibleMsgs.length === 0
+          ? '<tr class="empty-row"><td colspan="10">&mdash;</td></tr>'
+          : visibleMsgs.map(function(m, i) {
+          var isSub = m.source === 'subagent';
+          var cls = m.isUserMessage ? 'row-user' : (isSub ? 'row-assistant row-subagent' : 'row-assistant');
+          var type = m.isUserMessage ? STR.user : (isSub ? STR.subagent : STR.mainAgent);
+          var chip = isSub ? '<span class="agent-chip">' + esc(m.agentLabel || (m.agentId || '').slice(0, 8) || '?') + '</span>' : '';
           var time = fmtTime(m.timestamp);
           var totIn = m.isUserMessage ? 0 : (m.inputTokens + m.cacheReadTokens);
           var hitRate = m.isUserMessage ? '-' : (totIn > 0 ? (m.cacheReadTokens / totIn * 100).toFixed(1) + '%' : '0%');
           return '<tr class="' + cls + '">' +
             '<td>' + (i + 1) + '</td>' +
-            '<td>' + type + ' <span style="font-size:9px;color:var(--muted)">' + time + '</span></td>' +
+            '<td>' + type + chip + ' <span class="cell-time" style="font-size:9px;color:var(--muted)">' + time + '</span></td>' +
             '<td>' + (m.isUserMessage ? '-' : esc(m.model || '-')) + '</td>' +
             '<td>' + (m.isUserMessage ? '-' : fmtTokens(totIn)) + '</td>' +
             '<td>' + (m.isUserMessage ? '-' : fmtTokens(m.cacheReadTokens)) + '</td>' +
             '<td>' + (m.isUserMessage ? '-' : fmtTokens(m.inputTokens)) + '</td>' +
             '<td>' + (m.isUserMessage ? '-' : fmtTokens(m.outputTokens)) + '</td>' +
             '<td>' + hitRate + '</td>' +
-            '<td>' + (m.isUserMessage ? '-' : fmtCost(m.costCNY)) + '</td>' +
+            '<td>' + (m.isUserMessage ? '-' : (m.costKnown === false ? '—' : fmtCost(m.costDisplay != null ? m.costDisplay : m.costCNY))) + '</td>' +
             '<td><span class="think-time">' + fmtThink(m.thinkingTimeMs) + '</span></td>' +
           '</tr>';
-        }).join('') +
+        }).join('')) +
       '</tbody></table></div>' +
     '<div class="footer">' + STR.autoRefresh.replace('{0}', String(Math.round(currentPollMs/1000))) +
-      ' <button id="pauseBtn" class="pause-btn" onclick="togglePause()">' + STR.pauseRefresh + '</button>' +
+      ' <button id="pauseBtn" class="pause-btn" data-action="toggle-pause">' + STR.pauseRefresh + '</button>' +
     '</div>';
 
   document.getElementById('app').innerHTML = html;
@@ -721,7 +873,7 @@ function renderAggregated(a) {
       return '<tr class="session-summary-row" data-sid="' + esc(s.sessionId) + '" style="cursor:pointer">' +
         '<td>' + esc(s.title) + '</td>' +
         '<td>' + s.messageCount + '</td>' +
-        '<td>' + fmtTokens(s.totalInputTokens + s.totalOutputTokens + s.totalCacheHitTokens + s.totalCacheMissTokens) + '</td>' +
+        '<td>' + fmtTokens(s.totalInputTokens + s.totalOutputTokens + s.totalCacheHitTokens + s.totalCacheMissTokens + (s.totalCacheCreationTokens || 0)) + '</td>' +
         '<td>' + fmtCost(s.totalCostCNY) + '</td>' +
         '<td>' + esc(s.primaryModel) + '</td>' +
         '<td style="font-size:9px;color:var(--muted)">' + dateStr + '</td>' +
@@ -736,7 +888,7 @@ function renderAggregated(a) {
     '<thead><tr><th>' + (STR.filterSelectSession || 'Session') + '</th><th>' + STR.messagesCount + '</th><th>' + STR.totalTokens + '</th><th>' + STR.totalCost + '</th><th>' + STR.modelLabel + '</th><th>Time</th></tr></thead>' +
     '<tbody>' + rowsHtml + '</tbody></table></div>' +
     '<div class="footer">' + STR.autoRefresh.replace('{0}', String(Math.round(currentPollMs/1000))) +
-      ' <button id="pauseBtn" class="pause-btn" onclick="togglePause()">' + STR.pauseRefresh + '</button>' +
+      ' <button id="pauseBtn" class="pause-btn" data-action="toggle-pause">' + STR.pauseRefresh + '</button>' +
     '</div>';
 
   document.getElementById('app').innerHTML = html;
