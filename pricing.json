@@ -1,7 +1,7 @@
 {
   "schemaVersion": 2,
   "updatedAt": "2026-10-21",
-  "source": "builtin+official",
+  "source": "auto:models.dev+manual-overrides",
   "providers": [
     {
       "id": "aliyun-bailian",
@@ -75,64 +75,123 @@
       "nativeCurrency": "USD",
       "models": {
         "claude-fable-5-1": {
-          "cacheHit": 1,
+          "cacheHit": 0.25,
           "cacheMiss": 10,
           "output": 50,
-          "cacheWrite": 12.5
+          "cacheWrite": 12.5,
+          "verified": "auto-2026-10-21"
         },
         "claude-fable-5": {
           "cacheHit": 1,
           "cacheMiss": 10,
           "output": 50,
-          "cacheWrite": 12.5
+          "cacheWrite": 12.5,
+          "verified": "auto-2026-10-21"
         },
         "claude-opus-5-5": {
-          "cacheHit": 0.4,
+          "cacheHit": 0.2,
           "cacheMiss": 4,
           "output": 20,
-          "cacheWrite": 5
+          "cacheWrite": 5,
+          "verified": "auto-2026-10-21"
         },
         "claude-opus-5": {
           "cacheHit": 0.5,
           "cacheMiss": 5,
           "output": 25,
-          "cacheWrite": 6.25
+          "cacheWrite": 6.25,
+          "verified": "auto-2026-10-21"
         },
         "claude-sonnet-5-5": {
-          "cacheHit": 0.2,
+          "cacheHit": 0.1,
           "cacheMiss": 2,
           "output": 10,
-          "cacheWrite": 2.5
+          "cacheWrite": 2.5,
+          "verified": "auto-2026-10-21"
         },
         "claude-sonnet-5": {
           "cacheHit": 0.2,
           "cacheMiss": 2,
           "output": 10,
-          "cacheWrite": 2.5
+          "cacheWrite": 2.5,
+          "verified": "auto-2026-10-21"
         },
         "claude-haiku-5-5": {
           "cacheHit": 0.01,
           "cacheMiss": 0.1,
           "output": 0.5,
-          "cacheWrite": 0.125
+          "cacheWrite": 0.125,
+          "verified": "auto-2026-10-21"
         },
         "claude-opus-4-8": {
-          "cacheHit": 1.5,
-          "cacheMiss": 15,
-          "output": 75,
-          "cacheWrite": 18.75
+          "cacheHit": 0.5,
+          "cacheMiss": 5,
+          "output": 25,
+          "cacheWrite": 6.25,
+          "verified": "auto-2026-10-21"
         },
         "claude-sonnet-4-6": {
-          "cacheHit": 0.6,
-          "cacheMiss": 6,
-          "output": 30,
-          "cacheWrite": 7.5
+          "cacheHit": 0.3,
+          "cacheMiss": 3,
+          "output": 15,
+          "cacheWrite": 3.75,
+          "verified": "auto-2026-10-21"
         },
         "claude-haiku-4-5": {
-          "cacheHit": 0.15,
-          "cacheMiss": 1.5,
-          "output": 7.5,
-          "cacheWrite": 1.875
+          "cacheHit": 0.1,
+          "cacheMiss": 1,
+          "output": 5,
+          "cacheWrite": 1.25,
+          "verified": "auto-2026-10-21"
+        },
+        "claude-opus-4-7": {
+          "cacheHit": 0.5,
+          "cacheMiss": 5,
+          "output": 25,
+          "cacheWrite": 6.25,
+          "verified": "auto-2026-10-21"
+        },
+        "claude-sonnet-4-5-20250929": {
+          "cacheHit": 0.3,
+          "cacheMiss": 3,
+          "output": 15,
+          "cacheWrite": 3.75,
+          "verified": "auto-2026-10-21"
+        },
+        "claude-sonnet-4-5": {
+          "cacheHit": 0.3,
+          "cacheMiss": 3,
+          "output": 15,
+          "cacheWrite": 3.75,
+          "verified": "auto-2026-10-21"
+        },
+        "claude-opus-4-6": {
+          "cacheHit": 0.5,
+          "cacheMiss": 5,
+          "output": 25,
+          "cacheWrite": 6.25,
+          "verified": "auto-2026-10-21"
+        },
+        "claude-opus-4-5": {
+          "cacheHit": 0.5,
+          "cacheMiss": 5,
+          "output": 25,
+          "cacheWrite": 6.25,
+          "verified": "auto-2026-10-21"
+        },
+        "claude-opus-4-5-20251101": {
+          "cacheHit": 0.5,
+          "cacheMiss": 5,
+          "output": 25,
+          "cacheWrite": 6.25,
+          "verified": "auto-2026-10-21"
+        },
+        "claude-haiku-4-5-20251001": {
+          "cacheHit": 0.1,
+          "cacheMiss": 1,
+          "output": 5,
+          "cacheWrite": 1.25,
+          "verified": "auto-2026-10-21"
         }
       }
     },
@@ -142,71 +201,212 @@
       "nativeCurrency": "USD",
       "models": {
         "gpt-6.1-sol": {
-          "cacheHit": 0.2,
+          "cacheHit": 0.1,
           "cacheMiss": 2,
           "output": 10,
-          "verified": "openrouter-2026-10-21"
+          "cacheWrite": 2.5,
+          "verified": "auto-2026-10-21"
         },
         "gpt-6-sol": {
           "cacheHit": 0.2,
           "cacheMiss": 2,
           "output": 10,
-          "verified": "openrouter-2026-10-21"
+          "cacheWrite": 2.5,
+          "verified": "auto-2026-10-21"
         },
         "gpt-6-astra": {
           "cacheHit": 1,
           "cacheMiss": 10,
           "output": 50,
-          "verified": "openrouter-2026-10-21"
+          "cacheWrite": 12.5,
+          "verified": "auto-2026-10-21"
         },
         "gpt-6-luna": {
           "cacheHit": 0.01,
           "cacheMiss": 0.1,
           "output": 0.5,
-          "verified": "openrouter-2026-10-21"
+          "cacheWrite": 0.125,
+          "verified": "auto-2026-10-21"
         },
         "gpt-5.6-terra": {
           "cacheHit": 0.2,
           "cacheMiss": 2,
           "output": 12,
-          "verified": "openrouter-2026-10-21"
+          "cacheWrite": 2.5,
+          "verified": "auto-2026-10-21"
         },
         "gpt-5.6-sol": {
           "cacheHit": 0.4,
           "cacheMiss": 4,
           "output": 20,
-          "verified": "openrouter-2026-10-21"
+          "cacheWrite": 5,
+          "verified": "auto-2026-10-21"
         },
         "gpt-5.6-luna": {
           "cacheHit": 0.02,
           "cacheMiss": 0.2,
           "output": 1.2,
-          "verified": "openrouter-2026-10-21"
+          "cacheWrite": 0.25,
+          "verified": "auto-2026-10-21"
         },
         "gpt-5.5": {
           "cacheHit": 0.5,
           "cacheMiss": 5,
-          "output": 30
+          "output": 30,
+          "verified": "auto-2026-10-21"
         },
         "gpt-5.5-pro": {
-          "cacheHit": 3,
+          "cacheHit": 0,
           "cacheMiss": 30,
-          "output": 180
+          "output": 180,
+          "verified": "auto-2026-10-21"
         },
         "gpt-4o": {
           "cacheHit": 1.25,
           "cacheMiss": 2.5,
-          "output": 10
+          "output": 10,
+          "verified": "auto-2026-10-21"
         },
         "gpt-4o-mini": {
           "cacheHit": 0.075,
           "cacheMiss": 0.15,
-          "output": 0.6
+          "output": 0.6,
+          "verified": "auto-2026-10-21"
         },
         "gpt-4.1": {
+          "cacheHit": 0.5,
+          "cacheMiss": 2,
+          "output": 8,
+          "verified": "auto-2026-10-21"
+        },
+        "gpt-5-pro": {
+          "cacheHit": 0,
+          "cacheMiss": 15,
+          "output": 120,
+          "verified": "auto-2026-10-21"
+        },
+        "gpt-5.1": {
+          "cacheHit": 0.125,
+          "cacheMiss": 1.25,
+          "output": 10,
+          "verified": "auto-2026-10-21"
+        },
+        "gpt-5.6": {
+          "cacheHit": 0.4,
+          "cacheMiss": 4,
+          "output": 20,
+          "cacheWrite": 5,
+          "verified": "auto-2026-10-21"
+        },
+        "o3": {
+          "cacheHit": 0.5,
+          "cacheMiss": 2,
+          "output": 8,
+          "verified": "auto-2026-10-21"
+        },
+        "gpt-4o-2024-08-06": {
           "cacheHit": 1.25,
           "cacheMiss": 2.5,
-          "output": 10
+          "output": 10,
+          "verified": "auto-2026-10-21"
+        },
+        "gpt-4o-2024-11-20": {
+          "cacheHit": 1.25,
+          "cacheMiss": 2.5,
+          "output": 10,
+          "verified": "auto-2026-10-21"
+        },
+        "gpt-5-mini": {
+          "cacheHit": 0.025,
+          "cacheMiss": 0.25,
+          "output": 2,
+          "verified": "auto-2026-10-21"
+        },
+        "gpt-5.3-codex": {
+          "cacheHit": 0.175,
+          "cacheMiss": 1.75,
+          "output": 14,
+          "verified": "auto-2026-10-21"
+        },
+        "gpt-5.3-codex-spark": {
+          "cacheHit": 0.175,
+          "cacheMiss": 1.75,
+          "output": 14,
+          "verified": "auto-2026-10-21"
+        },
+        "gpt-5.4-pro": {
+          "cacheHit": 0,
+          "cacheMiss": 30,
+          "output": 180,
+          "verified": "auto-2026-10-21"
+        },
+        "gpt-5.4-nano": {
+          "cacheHit": 0.02,
+          "cacheMiss": 0.2,
+          "output": 1.25,
+          "verified": "auto-2026-10-21"
+        },
+        "gpt-daybreak-red-latest": {
+          "cacheHit": 1.25,
+          "cacheMiss": 12.5,
+          "output": 75,
+          "cacheWrite": 15.625,
+          "verified": "auto-2026-10-21"
+        },
+        "gpt-daybreak-blue-latest": {
+          "cacheHit": 0.4,
+          "cacheMiss": 4,
+          "output": 20,
+          "cacheWrite": 5,
+          "verified": "auto-2026-10-21"
+        },
+        "gpt-5.4": {
+          "cacheHit": 0.25,
+          "cacheMiss": 2.5,
+          "output": 15,
+          "verified": "auto-2026-10-21"
+        },
+        "gpt-5-nano": {
+          "cacheHit": 0.005,
+          "cacheMiss": 0.05,
+          "output": 0.4,
+          "verified": "auto-2026-10-21"
+        },
+        "gpt-5.2": {
+          "cacheHit": 0.175,
+          "cacheMiss": 1.75,
+          "output": 14,
+          "verified": "auto-2026-10-21"
+        },
+        "gpt-5.2-pro": {
+          "cacheHit": 0,
+          "cacheMiss": 21,
+          "output": 168,
+          "verified": "auto-2026-10-21"
+        },
+        "gpt-5": {
+          "cacheHit": 0.125,
+          "cacheMiss": 1.25,
+          "output": 10,
+          "verified": "auto-2026-10-21"
+        },
+        "gpt-4.1-mini": {
+          "cacheHit": 0.1,
+          "cacheMiss": 0.4,
+          "output": 1.6,
+          "verified": "auto-2026-10-21"
+        },
+        "o3-pro": {
+          "cacheHit": 0,
+          "cacheMiss": 20,
+          "output": 80,
+          "verified": "auto-2026-10-21"
+        },
+        "gpt-5.4-mini": {
+          "cacheHit": 0.075,
+          "cacheMiss": 0.75,
+          "output": 4.5,
+          "verified": "auto-2026-10-21"
         }
       }
     },
@@ -216,14 +416,118 @@
       "nativeCurrency": "USD",
       "models": {
         "gemini-2.5-pro": {
-          "cacheHit": 0,
+          "cacheHit": 0.125,
           "cacheMiss": 1.25,
-          "output": 10
+          "output": 10,
+          "verified": "auto-2026-10-21"
         },
         "gemini-2.5-flash": {
+          "cacheHit": 0.03,
+          "cacheMiss": 0.3,
+          "output": 2.5,
+          "verified": "auto-2026-10-21"
+        },
+        "gemini-pro-latest": {
+          "cacheHit": 0.2,
+          "cacheMiss": 2,
+          "output": 12,
+          "verified": "auto-2026-10-21"
+        },
+        "gemini-3.6-flash": {
+          "cacheHit": 0.075,
+          "cacheMiss": 0.75,
+          "output": 3.75,
+          "verified": "auto-2026-10-21"
+        },
+        "gemini-3.8-flash": {
+          "cacheHit": 0.075,
+          "cacheMiss": 0.75,
+          "output": 3.75,
+          "verified": "auto-2026-10-21"
+        },
+        "gemini-3.5-flash": {
+          "cacheHit": 0.15,
+          "cacheMiss": 1.5,
+          "output": 9,
+          "verified": "auto-2026-10-21"
+        },
+        "gemini-flash-lite-latest": {
+          "cacheHit": 0.03,
+          "cacheMiss": 0.3,
+          "output": 2.5,
+          "verified": "auto-2026-10-21"
+        },
+        "gemini-2.5-flash-lite": {
+          "cacheHit": 0.01,
+          "cacheMiss": 0.1,
+          "output": 0.4,
+          "verified": "auto-2026-10-21"
+        },
+        "gemini-4-argon": {
+          "cacheHit": 0.1,
+          "cacheMiss": 2,
+          "output": 10,
+          "verified": "auto-2026-10-21"
+        },
+        "gemini-3.7-flash": {
+          "cacheHit": 0.075,
+          "cacheMiss": 0.75,
+          "output": 3.75,
+          "verified": "auto-2026-10-21"
+        },
+        "deep-research-preview-04-2026": {
+          "cacheHit": 0.2,
+          "cacheMiss": 2,
+          "output": 12,
+          "verified": "auto-2026-10-21"
+        },
+        "gemini-3.1-pro-preview-customtools": {
+          "cacheHit": 0.2,
+          "cacheMiss": 2,
+          "output": 12,
+          "verified": "auto-2026-10-21"
+        },
+        "gemini-3.5-flash-lite": {
+          "cacheHit": 0.03,
+          "cacheMiss": 0.3,
+          "output": 2.5,
+          "verified": "auto-2026-10-21"
+        },
+        "gemini-3.1-pro-preview": {
+          "cacheHit": 0.2,
+          "cacheMiss": 2,
+          "output": 12,
+          "verified": "auto-2026-10-21"
+        },
+        "gemini-3.1-flash-lite": {
+          "cacheHit": 0.025,
+          "cacheMiss": 0.25,
+          "output": 1.5,
+          "verified": "auto-2026-10-21"
+        },
+        "gemini-flash-latest": {
+          "cacheHit": 0.075,
+          "cacheMiss": 0.75,
+          "output": 3.75,
+          "verified": "auto-2026-10-21"
+        },
+        "gemini-2.5-computer-use-preview-10-2025": {
           "cacheHit": 0,
-          "cacheMiss": 0.15,
-          "output": 0.6
+          "cacheMiss": 1.25,
+          "output": 10,
+          "verified": "auto-2026-10-21"
+        },
+        "deep-research-max-preview-04-2026": {
+          "cacheHit": 0.2,
+          "cacheMiss": 2,
+          "output": 12,
+          "verified": "auto-2026-10-21"
+        },
+        "gemini-3-flash-preview": {
+          "cacheHit": 0.05,
+          "cacheMiss": 0.5,
+          "output": 3,
+          "verified": "auto-2026-10-21"
         }
       }
     },
@@ -240,7 +544,27 @@
         "kimi-k2.6": {
           "cacheHit": 0.16,
           "cacheMiss": 0.95,
-          "output": 4
+          "output": 4,
+          "verified": "auto-2026-10-21"
+        },
+        "kimi-k3": {
+          "cacheHit": 0.3,
+          "cacheMiss": 3,
+          "output": 15,
+          "cacheWrite": 3,
+          "verified": "auto-2026-10-21"
+        },
+        "kimi-k2.7-code-highspeed": {
+          "cacheHit": 0.38,
+          "cacheMiss": 1.9,
+          "output": 8,
+          "verified": "auto-2026-10-21"
+        },
+        "kimi-k2.7-code": {
+          "cacheHit": 0.19,
+          "cacheMiss": 0.95,
+          "output": 4,
+          "verified": "auto-2026-10-21"
         }
       }
     },
@@ -304,6 +628,54 @@
           "cacheHit": 0,
           "cacheMiss": 2,
           "output": 8
+        },
+        "grok-4.6": {
+          "cacheHit": 0.5,
+          "cacheMiss": 2,
+          "output": 6,
+          "verified": "auto-2026-10-21"
+        },
+        "grok-4.5": {
+          "cacheHit": 0.3,
+          "cacheMiss": 2,
+          "output": 6,
+          "verified": "auto-2026-10-21"
+        },
+        "grok-4.20-multi-agent-0309": {
+          "cacheHit": 0.2,
+          "cacheMiss": 1.25,
+          "output": 2.5,
+          "verified": "auto-2026-10-21"
+        },
+        "grok-4.20-0309-non-reasoning": {
+          "cacheHit": 0.2,
+          "cacheMiss": 1.25,
+          "output": 2.5,
+          "verified": "auto-2026-10-21"
+        },
+        "grok-4.7": {
+          "cacheHit": 0.5,
+          "cacheMiss": 2,
+          "output": 6,
+          "verified": "auto-2026-10-21"
+        },
+        "grok-4.3": {
+          "cacheHit": 0.2,
+          "cacheMiss": 1.25,
+          "output": 2.5,
+          "verified": "auto-2026-10-21"
+        },
+        "grok-build-0.1": {
+          "cacheHit": 0.2,
+          "cacheMiss": 1,
+          "output": 2,
+          "verified": "auto-2026-10-21"
+        },
+        "grok-4.20-0309-reasoning": {
+          "cacheHit": 0.2,
+          "cacheMiss": 1.25,
+          "output": 2.5,
+          "verified": "auto-2026-10-21"
         }
       }
     },
@@ -321,9 +693,204 @@
           "cacheHit": 0,
           "cacheMiss": 0.2,
           "output": 0.6
+        },
+        "voxtral-small-latest": {
+          "cacheHit": 0,
+          "cacheMiss": 0.1,
+          "output": 0.4,
+          "verified": "auto-2026-10-21"
+        },
+        "zai-glm-5-3": {
+          "cacheHit": 0.14,
+          "cacheMiss": 1.4,
+          "output": 4.4,
+          "verified": "auto-2026-10-21"
+        },
+        "ministral-14b-2512": {
+          "cacheHit": 0.02,
+          "cacheMiss": 0.2,
+          "output": 0.2,
+          "verified": "auto-2026-10-21"
+        },
+        "mistral-medium-latest": {
+          "cacheHit": 0.15,
+          "cacheMiss": 1.5,
+          "output": 7.5,
+          "verified": "auto-2026-10-21"
+        },
+        "ministral-3b-2512": {
+          "cacheHit": 0.01,
+          "cacheMiss": 0.1,
+          "output": 0.1,
+          "verified": "auto-2026-10-21"
+        },
+        "ministral-3b-latest": {
+          "cacheHit": 0.01,
+          "cacheMiss": 0.1,
+          "output": 0.1,
+          "verified": "auto-2026-10-21"
+        },
+        "ministral-8b-2512": {
+          "cacheHit": 0.015,
+          "cacheMiss": 0.15,
+          "output": 0.15,
+          "verified": "auto-2026-10-21"
+        },
+        "voxtral-small-2507": {
+          "cacheHit": 0,
+          "cacheMiss": 0.1,
+          "output": 0.4,
+          "verified": "auto-2026-10-21"
+        },
+        "mistral-large-latest": {
+          "cacheHit": 0.05,
+          "cacheMiss": 0.5,
+          "output": 1.5,
+          "verified": "auto-2026-10-21"
+        },
+        "codestral-2508": {
+          "cacheHit": 0.03,
+          "cacheMiss": 0.3,
+          "output": 0.9,
+          "verified": "auto-2026-10-21"
+        },
+        "mistral-small-2603": {
+          "cacheHit": 0.015,
+          "cacheMiss": 0.15,
+          "output": 0.6,
+          "verified": "auto-2026-10-21"
+        },
+        "codestral-latest": {
+          "cacheHit": 0.03,
+          "cacheMiss": 0.3,
+          "output": 0.9,
+          "verified": "auto-2026-10-21"
+        },
+        "ministral-8b-latest": {
+          "cacheHit": 0.015,
+          "cacheMiss": 0.15,
+          "output": 0.15,
+          "verified": "auto-2026-10-21"
+        },
+        "mistral-large-2512": {
+          "cacheHit": 0.05,
+          "cacheMiss": 0.5,
+          "output": 1.5,
+          "verified": "auto-2026-10-21"
+        },
+        "mistral-small-latest": {
+          "cacheHit": 0.015,
+          "cacheMiss": 0.15,
+          "output": 0.6,
+          "verified": "auto-2026-10-21"
+        },
+        "mistral-large-4": {
+          "cacheHit": 0.07,
+          "cacheMiss": 0.68,
+          "output": 2.09,
+          "verified": "auto-2026-10-21"
+        },
+        "mistral-medium-2604": {
+          "cacheHit": 0.15,
+          "cacheMiss": 1.5,
+          "output": 7.5,
+          "verified": "auto-2026-10-21"
         }
       }
     }
   ],
-  "aliases": {}
+  "aliases": {},
+  "holidays": [
+    "2024-01-01",
+    "2024-02-10",
+    "2024-02-11",
+    "2024-02-12",
+    "2024-02-13",
+    "2024-02-14",
+    "2024-02-15",
+    "2024-02-16",
+    "2024-02-17",
+    "2024-04-04",
+    "2024-04-05",
+    "2024-04-06",
+    "2024-05-01",
+    "2024-05-02",
+    "2024-05-03",
+    "2024-05-04",
+    "2024-05-05",
+    "2024-06-08",
+    "2024-06-09",
+    "2024-06-10",
+    "2024-09-15",
+    "2024-09-16",
+    "2024-09-17",
+    "2024-10-01",
+    "2024-10-02",
+    "2024-10-03",
+    "2024-10-04",
+    "2024-10-05",
+    "2024-10-06",
+    "2024-10-07",
+    "2025-01-01",
+    "2025-01-28",
+    "2025-01-29",
+    "2025-01-30",
+    "2025-01-31",
+    "2025-02-01",
+    "2025-02-02",
+    "2025-02-03",
+    "2025-02-04",
+    "2025-04-04",
+    "2025-04-05",
+    "2025-04-06",
+    "2025-05-01",
+    "2025-05-02",
+    "2025-05-03",
+    "2025-05-04",
+    "2025-05-05",
+    "2025-05-31",
+    "2025-06-01",
+    "2025-06-02",
+    "2025-10-01",
+    "2025-10-02",
+    "2025-10-03",
+    "2025-10-04",
+    "2025-10-05",
+    "2025-10-06",
+    "2025-10-07",
+    "2025-10-08",
+    "2026-01-01",
+    "2026-01-02",
+    "2026-01-03",
+    "2026-02-15",
+    "2026-02-16",
+    "2026-02-17",
+    "2026-02-18",
+    "2026-02-19",
+    "2026-02-20",
+    "2026-02-21",
+    "2026-02-22",
+    "2026-02-23",
+    "2026-04-04",
+    "2026-04-05",
+    "2026-04-06",
+    "2026-05-01",
+    "2026-05-02",
+    "2026-05-03",
+    "2026-05-04",
+    "2026-05-05",
+    "2026-06-19",
+    "2026-06-20",
+    "2026-06-21",
+    "2026-09-25",
+    "2026-09-26",
+    "2026-09-27",
+    "2026-10-01",
+    "2026-10-02",
+    "2026-10-03",
+    "2026-10-04",
+    "2026-10-05",
+    "2026-10-06",
+    "2026-10-07"
+  ]
 }

@@ -219,7 +219,12 @@
         "claudeTokenMonitor.pricing.updateUrl": {
           "type": "string",
           "default": "",
-          "description": "Custom URL for pricing updates. Leave empty to use the default GitHub source."
+          "description": "Custom URL for pricing updates. Leave empty to use the default source (Aliyun OSS, with GitHub mirrors as fallback)."
+        },
+        "claudeTokenMonitor.pricing.bailianPeak": {
+          "type": "boolean",
+          "default": true,
+          "description": "Apply Aliyun Bailian peak/off-peak pricing (Beijing time: Monday-Friday 09:00-12:00 and 14:00-18:00 are peak, except Chinese statutory holidays). Disable if your account is billed at a flat rate."
         },
         "claudeTokenMonitor.pollIntervalMs": {
           "type": "number",

@@ -6,7 +6,7 @@ import * as vscode from 'vscode';
 import type { ExtensionConfig, Currency, CustomModelConfig } from '../model/types';
 import { resolveLanguage } from '../i18n';
 import { resolveCurrency } from '../model/pricing';
-import { setCustomRates } from '../model/pricing';
+import { setCustomRates, setBailianPeakPricingEnabled } from '../model/pricing';
 
 /** Read the full typed configuration snapshot. */
 export function getConfig(): ExtensionConfig {
@@ -24,6 +24,9 @@ export function getConfig(): ExtensionConfig {
     setCustomRates(rawRates);
   }
 
+  // Applies to every cost calculation from now on (including history replay).
+  setBailianPeakPricingEnabled(cfg.get<boolean>('pricing.bailianPeak', true));
+
   return {
     language: langSetting,
     resolvedLanguage: resolvedLang,
@@ -39,5 +42,6 @@ export function getConfig(): ExtensionConfig {
     budgetWarning: cfg.get<number>('budgetWarning', 0),
     pollIntervalMs: cfg.get<number>('pollIntervalMs', 2000),
     pricingUpdateUrl: cfg.get<string>('pricing.updateUrl', ''),
+    bailianPeakPricing: cfg.get<boolean>('pricing.bailianPeak', true),
   };
 }

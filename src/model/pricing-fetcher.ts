@@ -7,9 +7,10 @@
  *   3. last good remote cache
  *   4. built-in table in pricing.ts
  *
- * The campus network blocks raw.githubusercontent.com and cdn.jsdelivr.net, so
- * the mirror order starts with hosts verified reachable there (fastly/gcore
- * jsDelivr, ghproxy).
+ * The catalog is produced by a scheduled job on a private server and published
+ * to Aliyun OSS, so the OSS URL comes first: it is reachable from mainland
+ * China without a proxy. GitHub mirrors stay as a fallback for networks where
+ * OSS is slow.
  */
 import * as https from 'https';
 import * as http from 'http';
@@ -35,7 +36,12 @@ const RATE_API_URLS = [
 
 const REPO = 'Miku3w3/ClaudeCodeUsage';
 const RAW = `https://raw.githubusercontent.com/${REPO}/master/pricing.json`;
-const PROVIDER_URLS = [
+
+/** Catalog published by the server job through Aliyun OSS (no filing, no proxy). */
+export const OSS_PRICING_URL = 'https://cctm-pricing.oss-cn-shenzhen.aliyuncs.com/pricing.json';
+
+export const PROVIDER_URLS = [
+  OSS_PRICING_URL,
   `https://fastly.jsdelivr.net/gh/${REPO}@master/pricing.json`,
   `https://gcore.jsdelivr.net/gh/${REPO}@master/pricing.json`,
   `https://ghproxy.net/${RAW}`,
@@ -43,6 +49,23 @@ const PROVIDER_URLS = [
   RAW,
   `https://cdn.jsdelivr.net/gh/${REPO}@master/pricing.json`,
 ];
+
+/**
+ * Hosts that answer directly from mainland China. When a proxy is configured
+ * they are still tried without it first, so a dead proxy cannot delay the
+ * primary catalog by a full timeout.
+ */
+const DIRECT_FIRST_HOSTS = ['aliyuncs.com'];
+
+function prefersDirect(urlStr: string): boolean {
+  try {
+    const host = new URL(urlStr).hostname.toLowerCase();
+    return DIRECT_FIRST_HOSTS.some((suffix) => host === suffix || host.endsWith(`.${suffix}`));
+  } catch {
+    return false;
+  }
+}
+
 const CACHE_TTL = 24 * 60 * 60 * 1000;
 const FETCH_TIMEOUT = 8000;
 /** Hard ceiling for one refresh cycle, so seven dead mirrors cannot take minutes. */
@@ -175,7 +198,15 @@ async function fetchWithProxy(urlStr: string, proxyUrl: string, timeoutMs: numbe
   return null;
 }
 
-function fetchDirect(urlStr: string, timeoutMs: number = FETCH_TIMEOUT): Promise<any | null> {
+/**
+ * Fetch and parse a JSON document without a proxy.
+ *
+ * Redirects are followed (up to 5 hops) because a mirror such as Gitee answers
+ * with a 302 to its CDN; a plain 200-only check would treat that as a dead
+ * source. Any transport error, non-200 status or unparseable body resolves to
+ * null so the caller can move on to the next source.
+ */
+export function fetchDirect(urlStr: string, timeoutMs: number = FETCH_TIMEOUT, redirects = 0): Promise<any | null> {
   if (timeoutMs <= 0) return Promise.resolve(null);
   let parsed: URL;
   try {
@@ -189,11 +220,25 @@ function fetchDirect(urlStr: string, timeoutMs: number = FETCH_TIMEOUT): Promise
   const mod = parsed.protocol === 'http:' ? http : https;
   return new Promise((resolve) => {
     try {
-      mod.get(urlStr, { timeout: timeoutMs }, (res) => {
-        if (res.statusCode !== 200) { res.resume(); return resolve(null); }
+      mod.get(urlStr, { timeout: timeoutMs, headers: { Accept: 'application/json' } }, (res) => {
+        const status = res.statusCode || 0;
+        if ([301, 302, 303, 307, 308].includes(status) && res.headers.location) {
+          res.resume();
+          if (redirects >= 5) return resolve(null);
+          let next: string;
+          try {
+            next = new URL(res.headers.location, urlStr).toString();
+          } catch {
+            return resolve(null);
+          }
+          return resolve(fetchDirect(next, timeoutMs, redirects + 1));
+        }
+        if (status !== 200) { res.resume(); return resolve(null); }
         let data = '';
+        res.setEncoding('utf8');
         res.on('data', (chunk: string) => { data += chunk; });
         res.on('end', () => { try { resolve(JSON.parse(data)); } catch { resolve(null); } });
+        res.on('error', () => resolve(null));
       }).on('error', () => resolve(null)).on('timeout', function (this: any) { this.destroy(); resolve(null); });
     } catch {
       resolve(null);
@@ -208,7 +253,7 @@ function fetchDirect(urlStr: string, timeoutMs: number = FETCH_TIMEOUT): Promise
  * (The old updater occasionally published files whose only entry was "error";
  * accepting those would erase every price.)
  */
-function isUsableCatalog(catalog: any, minProviders: number): boolean {
+export function isUsableCatalog(catalog: any, minProviders: number): boolean {
   if (!catalog || !Array.isArray(catalog.providers)) return false;
   // Only the v2 schema is trusted. Legacy files produced by the old AI-scraper
   // (nested shape, "error" models) must not overwrite the curated catalog.
@@ -315,12 +360,27 @@ export async function checkForUpdates(customUrl?: string, force = false): Promis
       break;
     }
     const timeoutMs = Math.min(FETCH_TIMEOUT, budgetLeft);
-    if (proxyUrl && proxyUrl.startsWith('http')) {
+    const hasProxy = !!proxyUrl && proxyUrl.startsWith('http');
+    const directFirst = prefersDirect(url);
+
+    // Proxy first for hosts that need it (GitHub mirrors); direct first for
+    // hosts that answer from mainland China (the OSS catalog).
+    if (hasProxy && !directFirst) {
       remote = await fetchWithProxy(url, proxyUrl, timeoutMs);
       if (remote) { source = url; break; }
     }
-    remote = await fetchDirect(url, timeoutMs);
+
+    const directBudget = Math.min(FETCH_TIMEOUT, remainingMs(deadline));
+    if (directBudget <= 0) break;
+    remote = await fetchDirect(url, directBudget);
     if (remote) { source = url; break; }
+
+    if (hasProxy && directFirst) {
+      const proxyBudget = Math.min(FETCH_TIMEOUT, remainingMs(deadline));
+      if (proxyBudget <= 0) break;
+      remote = await fetchWithProxy(url, proxyUrl, proxyBudget);
+      if (remote) { source = url; break; }
+    }
   }
 
   if (remote) {
@@ -338,6 +398,7 @@ export async function checkForUpdates(customUrl?: string, force = false): Promis
           updatedAt: remote.updatedAt || new Date().toISOString(),
           providers: remote.providers,
           rates: remote.rates,
+          holidays: remote.holidays,
           source,
         };
         fs.writeFileSync(cacheFile, JSON.stringify(cachePayload, null, 2), 'utf-8');

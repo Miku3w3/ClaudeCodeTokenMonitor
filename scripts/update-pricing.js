@@ -141,6 +141,22 @@ const SOURCES = [
   },
 ];
 
+// ─── models.dev ─────────────────────────────────────────────────
+// Community-maintained catalog (USD per 1M tokens, updated continuously).
+// Using it removes the AI scrape for every USD provider it covers. CNY
+// providers are NOT taken from here: models.dev stores USD values, and a
+// straight FX conversion does not match what Bailian/Zhipu/Volcengine bill.
+
+const MODELS_DEV_URL = 'https://models.dev/api.json';
+const MODELS_DEV_PROVIDERS = {
+  anthropic: 'anthropic',
+  openai: 'openai',
+  google: 'google',
+  xai: 'xai',
+  mistral: 'mistral',
+  moonshot: 'moonshotai',
+};
+
 // ─── AI backend ─────────────────────────────────────────────────
 
 function getAIConfig() {
@@ -335,6 +351,13 @@ function isPlausibleJump(next, current) {
   for (const field of ['cacheHit', 'cacheMiss', 'output']) {
     const a = next[field], b = current[field];
     if (a === undefined || b === undefined) continue;
+    if (field === 'cacheHit') {
+      // Cache-read prices legitimately move between 0 and ~0.5x of the input
+      // price: providers add, drop and reprice prompt caching. Only a value
+      // above half of the input price is treated as a parsing error.
+      if (a > (Number(next.cacheMiss) || 0) * 0.5) return false;
+      continue;
+    }
     if (b === 0 ? a > 0 : a > b * MAX_PRICE_JUMP || a < b / MAX_PRICE_JUMP) return false;
   }
   return true;
@@ -359,6 +382,60 @@ function validateCatalog(catalog) {
 }
 
 // ─── Update ─────────────────────────────────────────────────────
+
+/**
+ * Turn one models.dev provider entry into our model map. Rows that are not
+ * priced text models are dropped: image/audio/embedding entries and zero-priced
+ * previews would otherwise pollute the catalog. Tiered (long-context) prices are
+ * ignored; the base price is used.
+ */
+function modelsDevExtraction(providerEntry) {
+  const models = {};
+  for (const [rawId, model] of Object.entries((providerEntry && providerEntry.models) || {})) {
+    if (!model || typeof model !== 'object') continue;
+    if (model.type && model.type !== 'text') continue;
+    const outputModalities = model.modalities && model.modalities.output;
+    if (Array.isArray(outputModalities) && !outputModalities.includes('text')) continue;
+    if (model.status === 'deprecated') continue;
+    const cost = model.cost || {};
+    const cacheMiss = Number(cost.input);
+    const output = Number(cost.output);
+    if (!(cacheMiss > 0) || !(output > 0)) continue;
+    const cacheHit = Number(cost.cache_read);
+    const cacheWrite = Number(cost.cache_write);
+    const key = normalizeKey(rawId);
+    if (!key || key === 'error') continue;
+    const entry = {
+      cacheHit: Number.isFinite(cacheHit) && cacheHit > 0 ? cacheHit : 0,
+      cacheMiss,
+      output,
+    };
+    if (Number.isFinite(cacheWrite) && cacheWrite > 0) entry.cacheWrite = cacheWrite;
+    models[key] = entry;
+  }
+  return models;
+}
+
+/**
+ * Fetch models.dev once. Returns `{ providerId: models }` for the providers it
+ * covers, or null when the request fails (the caller then falls back to the AI
+ * scrape, so a models.dev outage never stops the update).
+ */
+async function fetchModelsDev() {
+  try {
+    const parsed = JSON.parse(await httpsGet(MODELS_DEV_URL));
+    const out = {};
+    for (const [id, devId] of Object.entries(MODELS_DEV_PROVIDERS)) {
+      if (!parsed[devId]) continue;
+      const models = modelsDevExtraction(parsed[devId]);
+      if (Object.keys(models).length > 0) out[id] = models;
+    }
+    return out;
+  } catch (e) {
+    console.log(`models.dev unavailable (${e.message}); falling back to the AI scrape`);
+    return null;
+  }
+}
 
 async function extractProvider(ai, source) {
   const urls = source.urls || [];
@@ -522,6 +599,22 @@ function selfTest() {
   if (!isPlausibleJump({ cacheHit: 0, cacheMiss: 2.2, output: 8.4 }, { cacheHit: 0, cacheMiss: 2, output: 8 })) {
     problems.push('isPlausibleJump rejected a normal change');
   }
+  if (!isPlausibleJump({ cacheHit: 0.3, cacheMiss: 2, output: 8 }, { cacheHit: 0, cacheMiss: 2, output: 8 })) {
+    problems.push('isPlausibleJump rejected a new cache-read price');
+  }
+  if (isPlausibleJump({ cacheHit: 1.5, cacheMiss: 2, output: 8 }, { cacheHit: 0, cacheMiss: 2, output: 8 })) {
+    problems.push('isPlausibleJump accepted a cache-read price above half of input');
+  }
+
+  const devSample = modelsDevExtraction({ models: {
+    'gpt-6': { cost: { input: 2, output: 10, cache_read: 0.2 } },
+    'image-model': { type: 'image', cost: { input: 1, output: 1 } },
+    'free-model': { cost: { input: 0, output: 0 } },
+    'deprecated-model': { status: 'deprecated', cost: { input: 1, output: 2 } },
+  } });
+  if (Object.keys(devSample).length !== 1 || devSample['gpt-6']?.cacheHit !== 0.2) {
+    problems.push(`modelsDevExtraction returned ${JSON.stringify(devSample)}`);
+  }
 
   if (fs.existsSync(OVERRIDES_PATH)) {
     const copy = JSON.parse(JSON.stringify(catalog));
@@ -576,21 +669,35 @@ async function main() {
   }
 
   const ai = getAIConfig();
-  if (!ai) {
-    console.error('No AI backend configured. Set BAILIAN_API_KEY, DEEPSEEK_API_KEY, OPENAI_API_KEY or ANTHROPIC_API_KEY.');
-    process.exit(2);
-  }
-  console.log(`AI backend: ${ai.name} (${ai.model})`);
 
   const today = new Date().toISOString().slice(0, 10);
   let added = 0, updated = 0, rejected = 0, failed = 0;
 
-  for (const source of SOURCES) {
-    if (providerFilter.size > 0 && !providerFilter.has(source.id)) continue;
+  const sources = SOURCES.filter((s) => providerFilter.size === 0 || providerFilter.has(s.id));
+  const useModelsDev = !process.argv.includes('--no-models-dev')
+    && sources.some((s) => s.currency === 'USD' && MODELS_DEV_PROVIDERS[s.id]);
+  const modelsDev = useModelsDev ? await fetchModelsDev() : null;
+  if (modelsDev) {
+    console.log(`models.dev: ${Object.keys(modelsDev).length} provider(s) available`);
+  }
+
+  const coveredByModelsDev = (source) => !!(modelsDev && source.currency === 'USD' && modelsDev[source.id]);
+  const needsAI = sources.some((source) => !coveredByModelsDev(source));
+  if (needsAI && !ai) {
+    console.error('No AI backend configured. Set BAILIAN_API_KEY, DEEPSEEK_API_KEY, OPENAI_API_KEY or ANTHROPIC_API_KEY.');
+    process.exit(2);
+  }
+  if (ai) console.log(`AI backend: ${ai.name} (${ai.model})`);
+  else console.log('AI backend: not needed for the selected providers');
+
+  for (const source of sources) {
     const provider = catalog.providers.find((p) => p.id === source.id);
     if (!provider) { console.log(`${source.id}: not in catalog, skipped`); continue; }
     console.log(`${source.name} (${source.id})...`);
-    const extracted = await extractProvider(ai, source);
+    const devModels = modelsDev && source.currency === 'USD' ? modelsDev[source.id] : null;
+    const extracted = devModels
+      ? { models: devModels, from: `models.dev/${MODELS_DEV_PROVIDERS[source.id]}` }
+      : await extractProvider(ai, source);
     if (!extracted) {
       console.log('    FAIL — keeping existing prices');
       failed++;
@@ -610,7 +717,9 @@ async function main() {
 
   catalog.schemaVersion = 2;
   catalog.updatedAt = today;
-  catalog.source = `auto:${ai.name}+official+manual-overrides`;
+  catalog.source = ai
+    ? `auto:${ai.name}+official+manual-overrides`
+    : 'auto:models.dev+manual-overrides';
 
   if (process.argv.includes('--rates')) {
     const rates = await fetchRates();

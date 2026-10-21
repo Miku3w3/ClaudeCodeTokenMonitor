@@ -29,6 +29,8 @@ export interface ExtensionConfig {
   budgetWarning: number;
   pollIntervalMs: number;
   pricingUpdateUrl: string;
+  /** Apply Aliyun Bailian peak/off-peak (time-of-day) pricing. */
+  bailianPeakPricing: boolean;
 }
 
 /** Raw usage data from an assistant message in the JSONL transcript */
@@ -232,6 +234,13 @@ export interface PricingCatalog {
   providers: ProviderMeta[];
   /** Global aliases applied before prefix matching */
   aliases?: Record<string, string>;
+  /**
+   * Chinese statutory holidays (YYYY-MM-DD, Beijing time). Days listed here are
+   * billed at the off-peak price even when they fall on a weekday. Kept in the
+   * remote catalog so a new year's schedule can ship without an extension
+   * release.
+   */
+  holidays?: string[];
 }
 
 // ═══════════════════════════════════════════════════════════════

@@ -296,6 +296,51 @@ function sanitizeAliases(raw: any): Record<string, string> | undefined {
   return Object.keys(aliases).length > 0 ? aliases : undefined;
 }
 
+/**
+ * Chinese statutory holidays (Beijing time), 2024–2026. Weekends inside a
+ * holiday window are already off-peak by the weekday rule; this list covers the
+ * weekday days (for example the Monday of a three-day break). The remote
+ * catalog may add dates at runtime, so a new year's schedule can ship without
+ * an extension release.
+ */
+const BUILTIN_HOLIDAYS = [
+  // 2024
+  '2024-01-01',
+  '2024-02-10', '2024-02-11', '2024-02-12', '2024-02-13', '2024-02-14', '2024-02-15', '2024-02-16', '2024-02-17',
+  '2024-04-04', '2024-04-05', '2024-04-06',
+  '2024-05-01', '2024-05-02', '2024-05-03', '2024-05-04', '2024-05-05',
+  '2024-06-08', '2024-06-09', '2024-06-10',
+  '2024-09-15', '2024-09-16', '2024-09-17',
+  '2024-10-01', '2024-10-02', '2024-10-03', '2024-10-04', '2024-10-05', '2024-10-06', '2024-10-07',
+  // 2025
+  '2025-01-01',
+  '2025-01-28', '2025-01-29', '2025-01-30', '2025-01-31', '2025-02-01', '2025-02-02', '2025-02-03', '2025-02-04',
+  '2025-04-04', '2025-04-05', '2025-04-06',
+  '2025-05-01', '2025-05-02', '2025-05-03', '2025-05-04', '2025-05-05',
+  '2025-05-31', '2025-06-01', '2025-06-02',
+  '2025-10-01', '2025-10-02', '2025-10-03', '2025-10-04', '2025-10-05', '2025-10-06', '2025-10-07', '2025-10-08',
+  // 2026
+  '2026-01-01', '2026-01-02', '2026-01-03',
+  '2026-02-15', '2026-02-16', '2026-02-17', '2026-02-18', '2026-02-19', '2026-02-20', '2026-02-21', '2026-02-22', '2026-02-23',
+  '2026-04-04', '2026-04-05', '2026-04-06',
+  '2026-05-01', '2026-05-02', '2026-05-03', '2026-05-04', '2026-05-05',
+  '2026-06-19', '2026-06-20', '2026-06-21',
+  '2026-09-25', '2026-09-26', '2026-09-27',
+  '2026-10-01', '2026-10-02', '2026-10-03', '2026-10-04', '2026-10-05', '2026-10-06', '2026-10-07',
+];
+
+function sanitizeHolidays(raw: any): string[] | undefined {
+  if (!Array.isArray(raw)) return undefined;
+  const holidays: string[] = [];
+  for (const value of raw) {
+    if (typeof value !== 'string') continue;
+    const day = value.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) continue;
+    if (!holidays.includes(day)) holidays.push(day);
+  }
+  return holidays.length > 0 ? holidays : undefined;
+}
+
 function sanitizeCatalog(input: any): PricingCatalog | null {
   if (!input || !Array.isArray(input.providers)) return null;
 
@@ -350,6 +395,7 @@ function sanitizeCatalog(input: any): PricingCatalog | null {
     source: typeof input.source === 'string' ? input.source : undefined,
     providers,
     aliases: sanitizeAliases(input.aliases),
+    holidays: sanitizeHolidays(input.holidays),
   };
 }
 
@@ -363,11 +409,28 @@ let activeCatalog: PricingCatalog = BUILTIN_CATALOG;
 let modelIndex = new Map<string, IndexedModel>();
 let aliasIndex = new Map<string, string>();
 let prefixKeys: string[] = [];
+let holidayKeys = new Set<string>(BUILTIN_HOLIDAYS);
+
+/**
+ * Master switch for Bailian peak/off-peak pricing. Some accounts are billed a
+ * flat rate; turning this off keeps every message at the list (peak) price.
+ */
+let bailianPeakPricingEnabled = true;
+
+export function setBailianPeakPricingEnabled(enabled: boolean): void {
+  bailianPeakPricingEnabled = enabled;
+}
+
+export function isBailianPeakPricingEnabled(): boolean {
+  return bailianPeakPricingEnabled;
+}
 
 function rebuildIndex(): void {
   modelIndex = new Map<string, IndexedModel>();
   aliasIndex = new Map<string, string>();
   prefixKeys = [];
+  holidayKeys = new Set<string>(BUILTIN_HOLIDAYS);
+  for (const day of activeCatalog.holidays || []) holidayKeys.add(day);
 
   for (const provider of activeCatalog.providers) {
     for (const [key, pricing] of Object.entries(provider.models)) {
@@ -588,14 +651,17 @@ export interface UsageTokens {
 }
 
 /**
- * Aliyun Bailian peak hours (Beijing time): workdays 09:00–12:00 and
- * 14:00–18:00. Everything else is off-peak. Unknown timestamps are treated as
- * peak (the conservative, higher price).
+ * Aliyun Bailian peak hours (Beijing time): Monday–Friday 09:00–12:00 and
+ * 14:00–18:00, excluding Chinese statutory holidays. Everything else — weekends,
+ * holidays, nights — is off-peak. Unknown timestamps are treated as peak (the
+ * conservative, higher price).
  */
 export function isBailianOffPeak(timestampMs: number): boolean {
   if (!Number.isFinite(timestampMs) || timestampMs <= 0) return false;
   const beijing = new Date(timestampMs + 8 * 3600_000);
   const day = beijing.getUTCDay();
+  // `toISOString` on the shifted date yields the Beijing calendar day.
+  if (holidayKeys.has(beijing.toISOString().slice(0, 10))) return true;
   if (day === 0 || day === 6) return true;
   const minutes = beijing.getUTCHours() * 60 + beijing.getUTCMinutes();
   const peak = (minutes >= 9 * 60 && minutes < 12 * 60)
@@ -625,7 +691,10 @@ export function calculateCostDetail(
   }
 
   let effective: ModelPricing = pricing;
-  if (pricing.providerId === 'aliyun-bailian' && pricing.offPeak && isBailianOffPeak(timestampMs)) {
+  if (bailianPeakPricingEnabled
+    && pricing.providerId === 'aliyun-bailian'
+    && pricing.offPeak
+    && isBailianOffPeak(timestampMs)) {
     effective = { ...pricing, ...pricing.offPeak };
   }
 
