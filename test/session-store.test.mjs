@@ -53,6 +53,7 @@ fs.writeFileSync(nestedFile, jsonl([
 ]), 'utf-8');
 
 const SessionStore = require('../out/data/SessionStore.js');
+const pricing = require('../out/model/pricing.js');
 
 test('scanAndIndex dedupes snapshots, includes subagents, and never stores NaN', () => {
   const index = SessionStore.scanAndIndex();
@@ -69,7 +70,9 @@ test('scanAndIndex dedupes snapshots, includes subagents, and never stores NaN',
   assert.equal(entry.title, 'Hello title');
 
   const onDisk = JSON.parse(fs.readFileSync(path.join(tmpHome, '.claude', 'token-tracker', 'sessions.json'), 'utf-8'));
-  assert.equal(onDisk.version, 4);
+  assert.equal(onDisk.version, 5);
+  assert.equal(typeof onDisk.pricingStamp, 'string');
+  assert.ok(onDisk.pricingStamp.length > 0);
   assert.equal(onDisk.sessions[sessionId].totalCostCNY, entry.totalCostCNY);
 });
 
@@ -92,6 +95,34 @@ test('a later, more complete snapshot replaces the earlier one instead of adding
   assert.equal(entry.totalOutputTokens, 75); // 40 → 60, plus 10 + 5
   assert.equal(entry.totalInputTokens, 1250);
   assert.ok(Number.isFinite(entry.totalCostCNY));
+});
+
+test('a price change re-prices sessions whose files never changed', () => {
+  const before = SessionStore.scanAndIndex().sessions[sessionId].totalCostCNY;
+  assert.ok(before > 0);
+
+  const original = JSON.parse(JSON.stringify(pricing.getPricingCatalog()));
+  const doubled = JSON.parse(JSON.stringify(original));
+  for (const provider of doubled.providers) {
+    for (const table of Object.values(provider.models || {})) {
+      for (const key of ['cacheHit', 'cacheMiss', 'cacheWrite', 'output']) {
+        if (typeof table[key] === 'number') table[key] *= 2;
+      }
+      for (const key of ['cacheHit', 'cacheMiss', 'cacheWrite', 'output']) {
+        if (table.offPeak && typeof table.offPeak[key] === 'number') table.offPeak[key] *= 2;
+      }
+    }
+  }
+  assert.ok(pricing.setPricingCatalog(doubled), 'doubled catalog must be accepted');
+
+  // The transcript files were not touched, so only the pricing stamp can force
+  // a re-parse here.
+  const after = SessionStore.scanAndIndex().sessions[sessionId].totalCostCNY;
+  assert.ok(after > before * 1.5, `expected ~2x cost, got ${before} → ${after}`);
+
+  pricing.setPricingCatalog(original);
+  const restored = SessionStore.scanAndIndex().sessions[sessionId].totalCostCNY;
+  assert.equal(Math.round(restored * 1e6), Math.round(before * 1e6));
 });
 
 test.after(() => {

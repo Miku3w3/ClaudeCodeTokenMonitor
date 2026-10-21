@@ -806,7 +806,13 @@ function handleSelectSession(sessionId: string, postMsg?: (msg: any) => void): v
   // Totals and the per-message table now both include subagent transcripts.
   const totalTokens = entry.totalInputTokens + entry.totalOutputTokens
     + entry.totalCacheHitTokens + (entry.totalCacheCreationTokens || 0);
-  const displayCost = costInDisplayCurrency(entry.totalCostCNY, currentConfig.resolvedCurrency);
+  // Price the freshly parsed messages rather than trusting the cached total:
+  // the index entry may predate the current price catalog.
+  const freshCostCNY = msgs.reduce((sum, m) => (m.isUserMessage ? sum : sum + (m.costCNY || 0)), 0);
+  const displayCost = costInDisplayCurrency(
+    msgs.some(m => !m.isUserMessage) ? freshCostCNY : entry.totalCostCNY,
+    currentConfig.resolvedCurrency,
+  );
   const lastAsst = findLast(msgs, m => !m.isUserMessage && (m.turnAiTimeMs ?? 0) > 0)
     || findLast(msgs, m => !m.isUserMessage);
   const modelStats = buildModelStatsFromMessages(msgs);

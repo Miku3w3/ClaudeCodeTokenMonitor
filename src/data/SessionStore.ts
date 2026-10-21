@@ -1,7 +1,7 @@
 /**
  * SessionStore — persistent index of every Claude Code session.
  *
- * Index layout: ~/.claude/token-tracker/sessions.json, schema v4.
+ * Index layout: ~/.claude/token-tracker/sessions.json, schema v5.
  *
  * Correctness rules (see docs/audit/2026-10-21-audit-summary.md):
  *   • assistant lines are streaming snapshots sharing one message.id — keep the
@@ -14,6 +14,7 @@
  *   • unknown models cost 0 and stay marked as unknown, never guessed.
  */
 
+import * as crypto from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { claudeDir, tokenTrackerDir } from '../utils/paths';
@@ -22,15 +23,36 @@ import {
   normalizeModelName as normalizeModelNameFull,
   calculateCostDetail,
   convertCurrency,
+  getPricingCatalog,
 } from '../model/CostCalculator';
 import { finiteNumber, normalizeUsage, isBetterSnapshot } from '../core/usage';
 
 // ─── Public API ─────────────────────────────────────────────────
 
 /** Bump this when the index schema changes or old data needs invalidation. */
-const CURRENT_INDEX_VERSION = 4;
+const CURRENT_INDEX_VERSION = 5;
 
 let index: SessionIndex | null = null;
+
+/**
+ * Fingerprint of the active price table.
+ *
+ * Per-session costs are cached in the index and the size/mtime check skips
+ * unchanged transcripts forever, so a price change would otherwise never be
+ * applied to history: the panel would keep showing the cost computed under the
+ * catalog that happened to be active the first time the session was indexed.
+ * The stamp covers the price table and the holiday list only — `updatedAt`
+ * alone would trigger a full rescan on every no-op daily refresh.
+ */
+export function getPricingStamp(customModels: CustomModelConfig[] = []): string {
+  const catalog = getPricingCatalog();
+  const payload = JSON.stringify({
+    providers: catalog.providers,
+    holidays: catalog.holidays,
+    customModels,
+  });
+  return crypto.createHash('sha1').update(payload).digest('hex').slice(0, 16);
+}
 
 /** Load the index from disk. Returns an empty index if missing, corrupted, or stale. */
 export function loadIndex(): SessionIndex {
@@ -50,7 +72,7 @@ export function loadIndex(): SessionIndex {
     }
     console.log('[TokenMonitor] Stale index detected (v' + (parsed?.version || 0) + '), rebuilding...');
   } catch { /* file missing or corrupted — rebuild */ }
-  const fresh: SessionIndex = { version: CURRENT_INDEX_VERSION, updatedAt: 0, sessions: {} };
+  const fresh: SessionIndex = { version: CURRENT_INDEX_VERSION, updatedAt: 0, pricingStamp: '', sessions: {} };
   index = fresh;
   return fresh;
 }
@@ -80,6 +102,14 @@ export function scanAndIndex(customModels: CustomModelConfig[] = []): SessionInd
   const projectsDir = path.join(claudeDir(), 'projects');
   const existingIds = new Set<string>();
 
+  // Prices changed since the last scan → every cached cost is stale. Re-parse
+  // all transcripts instead of trusting the size/mtime shortcut.
+  const stamp = getPricingStamp(customModels);
+  const pricesChanged = idx.pricingStamp !== stamp;
+  if (pricesChanged && idx.pricingStamp) {
+    console.log('[TokenMonitor] Pricing catalog changed, re-pricing the session index...');
+  }
+
   let cwdDirs: fs.Dirent[];
   try { cwdDirs = fs.readdirSync(projectsDir, { withFileTypes: true }); } catch { return idx; }
 
@@ -108,7 +138,8 @@ export function scanAndIndex(customModels: CustomModelConfig[] = []): SessionInd
 
       const existing = idx.sessions[sessionId];
       if (
-        existing
+        !pricesChanged
+        && existing
         && existing.fileSize === fingerprint.size
         && existing.fileMtimeMs === fingerprint.mtimeMs
         && Number.isFinite(existing.totalCostCNY)
@@ -129,6 +160,7 @@ export function scanAndIndex(customModels: CustomModelConfig[] = []): SessionInd
   }
 
   index = idx;
+  idx.pricingStamp = stamp;
   saveIndex();
   return index;
 }

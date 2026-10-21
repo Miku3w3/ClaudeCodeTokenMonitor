@@ -274,6 +274,8 @@ export interface SessionIndexEntry {
 export interface SessionIndex {
   version: number;
   updatedAt: number;         // epoch ms — last write time
+  /** Fingerprint of the price table the cached costs were computed with */
+  pricingStamp?: string;
   sessions: Record<string, SessionIndexEntry>;  // keyed by sessionId
 }
 
