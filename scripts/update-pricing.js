@@ -16,6 +16,8 @@
  */
 
 const https = require('https');
+const net = require('net');
+const tls = require('tls');
 const fs = require('fs');
 const path = require('path');
 
@@ -24,7 +26,48 @@ const PRICING_PATH = path.join(ROOT, 'pricing.json');
 const OVERRIDES_PATH = path.join(ROOT, 'pricing-overrides.json');
 const MAX_PRICE_JUMP = 5;
 const FETCH_TIMEOUT = 15000;
+const DIRECT_TIMEOUT = 8000;
 const USER_AGENT = 'Mozilla/5.0 (compatible; CCTM-pricing-bot/2.0)';
+
+// ─── Outbound proxy ─────────────────────────────────────────────
+// Foreign vendor pages need a proxy on a mainland server. HTTPS_PROXY
+// (or HTTP_PROXY) is honoured through a CONNECT tunnel so the normal
+// https client keeps handling chunked encoding and TLS.
+
+function buildProxyAgent() {
+  const raw = process.env.HTTPS_PROXY || process.env.https_proxy
+    || process.env.HTTP_PROXY || process.env.http_proxy || '';
+  if (!raw) return null;
+  let proxy;
+  try { proxy = new URL(raw); } catch { return null; }
+  const proxyHost = proxy.hostname;
+  const proxyPort = Number(proxy.port) || (proxy.protocol === 'https:' ? 443 : 80);
+  const agent = new https.Agent({ keepAlive: false });
+  agent.createConnection = (options, callback) => {
+    const socket = net.connect(proxyPort, proxyHost, () => {
+      socket.write(`CONNECT ${options.host}:${options.port} HTTP/1.1\r\n`
+        + `Host: ${options.host}:${options.port}\r\nProxy-Connection: keep-alive\r\n\r\n`);
+      let buffer = '';
+      const onData = (chunk) => {
+        buffer += chunk.toString('latin1');
+        if (!buffer.includes('\r\n\r\n')) return;
+        socket.removeListener('data', onData);
+        if (!/^HTTP\/1\.[01] 200/.test(buffer)) {
+          socket.destroy();
+          return callback(new Error(`proxy CONNECT refused: ${buffer.split('\r\n')[0]}`));
+        }
+        const secured = tls.connect({ socket, servername: options.host, rejectUnauthorized: true },
+          () => callback(null, secured));
+        secured.on('error', callback);
+      };
+      socket.on('data', onData);
+    });
+    socket.on('error', callback);
+  };
+  return agent;
+}
+
+const PROXY_AGENT = buildProxyAgent();
 
 // ─── Sources ────────────────────────────────────────────────────
 // `id` must match the provider id in pricing.json; a provider is only
@@ -101,11 +144,11 @@ const SOURCES = [
 // ─── AI backend ─────────────────────────────────────────────────
 
 function getAIConfig() {
-  const openaiCompatible = (name, key, hostname, model) => ({
+  const openaiCompatible = (name, key, hostname, model, requestPath = '/v1/chat/completions') => ({
     name,
     key,
     hostname,
-    path: '/v1/chat/completions',
+    path: requestPath,
     model,
     buildBody: (msg) => JSON.stringify({
       model,
@@ -121,7 +164,15 @@ function getAIConfig() {
   });
 
   if (process.env.BAILIAN_API_KEY) {
-    return openaiCompatible('bailian', process.env.BAILIAN_API_KEY, 'dashscope.aliyuncs.com', 'deepseek-v4.1-flash');
+    // DashScope's OpenAI-compatible endpoint. The bare /v1/... path is the
+    // native API and 404s here; the model id needs its dated suffix.
+    return openaiCompatible(
+      'bailian',
+      process.env.BAILIAN_API_KEY,
+      'dashscope.aliyuncs.com',
+      process.env.BAILIAN_MODEL || 'deepseek-v4.1-flash-1017',
+      '/compatible-mode/v1/chat/completions',
+    );
   }
   if (process.env.DEEPSEEK_API_KEY) {
     return openaiCompatible('deepseek', process.env.DEEPSEEK_API_KEY, 'api.deepseek.com', 'deepseek-chat');
@@ -156,16 +207,16 @@ function parseFirstJson(text) {
 }
 
 function callAI(ai, userMessage) {
-  return new Promise((resolve, reject) => {
-    const body = ai.buildBody(userMessage);
-    const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) };
-    if (ai.name === 'anthropic') {
-      headers['x-api-key'] = ai.key;
-      headers['anthropic-version'] = '2023-06-01';
-    } else {
-      headers.Authorization = `Bearer ${ai.key}`;
-    }
-    const req = https.request({ hostname: ai.hostname, path: ai.path, method: 'POST', headers, timeout: 60000 }, (res) => {
+  const body = ai.buildBody(userMessage);
+  const headers = { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) };
+  if (ai.name === 'anthropic') {
+    headers['x-api-key'] = ai.key;
+    headers['anthropic-version'] = '2023-06-01';
+  } else {
+    headers.Authorization = `Bearer ${ai.key}`;
+  }
+  const send = (agent) => new Promise((resolve, reject) => {
+    const req = https.request({ hostname: ai.hostname, path: ai.path, method: 'POST', agent: agent || undefined, headers, timeout: 60000 }, (res) => {
       let data = '';
       res.on('data', (c) => { data += c; });
       res.on('end', () => {
@@ -178,14 +229,20 @@ function callAI(ai, userMessage) {
     req.write(body);
     req.end();
   });
+  // The AI endpoint is domestic, so try direct first and only fall back to the
+  // proxy when the host itself needs one.
+  return send(null).catch((err) => {
+    if (!PROXY_AGENT) throw err;
+    return send(PROXY_AGENT);
+  });
 }
 
 // ─── HTTP ───────────────────────────────────────────────────────
 
 function httpsGet(url, redirects = 0) {
-  return new Promise((resolve, reject) => {
-    if (redirects > 5) return reject(new Error('too many redirects'));
-    const req = https.get(url, { timeout: FETCH_TIMEOUT, headers: { 'User-Agent': USER_AGENT, 'Accept-Language': 'en,zh-CN;q=0.8' } }, (res) => {
+  if (redirects > 5) return Promise.reject(new Error('too many redirects'));
+  const request = (agent, timeoutMs) => new Promise((resolve, reject) => {
+    const req = https.get(url, { timeout: timeoutMs, agent: agent || undefined, headers: { 'User-Agent': USER_AGENT, 'Accept-Language': 'en,zh-CN;q=0.8' } }, (res) => {
       if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
         res.resume();
         return httpsGet(new URL(res.headers.location, url).toString(), redirects + 1).then(resolve, reject);
@@ -199,6 +256,12 @@ function httpsGet(url, redirects = 0) {
     });
     req.on('error', reject);
     req.on('timeout', () => req.destroy(new Error('timeout')));
+  });
+  // Direct first: mainland-hosted sites are faster and some (anthropic.com)
+  // only answer directly. Fall back to the proxy for the rest.
+  return request(null, DIRECT_TIMEOUT).catch((directError) => {
+    if (!PROXY_AGENT) throw directError;
+    return request(PROXY_AGENT, FETCH_TIMEOUT);
   });
 }
 
@@ -404,12 +467,19 @@ function applyOverrides(catalog, overrides) {
   return applied;
 }
 
-/** Read `--name=value` or a bare `--flag`. */
+/** Read `--name=value`, `--name value`, or a bare `--flag`. */
 function getArg(name, fallback = '') {
+  const argv = process.argv.slice(2);
   const prefix = name + '=';
-  const token = process.argv.slice(2).find((a) => a === name || a.startsWith(prefix));
-  if (!token) return fallback;
-  return token === name ? '' : token.slice(prefix.length);
+  for (let i = 0; i < argv.length; i++) {
+    const token = argv[i];
+    if (token.startsWith(prefix)) return token.slice(prefix.length);
+    if (token === name) {
+      const next = argv[i + 1];
+      return next && !next.startsWith('--') ? next : '';
+    }
+  }
+  return fallback;
 }
 
 async function fetchRates() {
