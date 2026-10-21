@@ -3,6 +3,7 @@
 import * as vscode from 'vscode';
 import * as crypto from 'crypto';
 import type { PerMessageStats, AggregatedData, SessionIndexEntry, ModelStatEntry } from '../model/types';
+import type { AgentStats } from '../core/agentView';
 
 export interface PanelData {
   sessionId: string;
@@ -24,6 +25,8 @@ export interface PanelData {
   pollIntervalMs?: number;
   /** Per-model breakdown (always present from v0.12.0) */
   modelStats?: ModelStatEntry[];
+  /** Main vs subagent split computed from the FULL message list (v1.3.0) */
+  agentStats?: AgentStats;
 }
 
 export type I18nProvider = () => {
@@ -265,6 +268,8 @@ export class DetailPanel implements vscode.WebviewViewProvider {
     --card-bg: var(--vscode-editor-inactiveSelectionBackground, #3a3d41);
     --accent: var(--vscode-charts-green, #89d185);
     --accent2: var(--vscode-charts-blue, #40a6ff);
+    /* subagents: purple, independent of the theme's blue/green chart palette */
+    --sub: var(--vscode-charts-purple, #c586c0);
     --warn: var(--vscode-charts-yellow, #e2b714);
     --muted: var(--vscode-descriptionForeground, #9d9d9d);
     --font: var(--vscode-font-family, 'Consolas', monospace);
@@ -319,15 +324,15 @@ export class DetailPanel implements vscode.WebviewViewProvider {
   .session-summary-row { cursor: pointer; }
   .session-summary-row:hover td { background: var(--card-bg); }
   /* v1.3.0 main/subagent split */
-  .agent-chip { display: inline-block; margin-left: 4px; padding: 0 4px; border-radius: 3px; background: var(--bg); border: 1px solid var(--border); color: var(--accent2); font-size: 9px; font-family: ui-monospace, monospace; vertical-align: middle; }
+  .agent-chip { display: inline-block; margin-left: 4px; padding: 0 4px; border-radius: 3px; background: var(--bg); border: 1px solid var(--border); color: var(--sub); font-size: 9px; font-family: ui-monospace, monospace; vertical-align: middle; }
   .agent-split { margin-bottom: 10px; padding: 8px 10px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 6px; }
   .agent-split-head { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); margin-bottom: 5px; }
   .agent-bar { display: flex; height: 8px; border-radius: 4px; overflow: hidden; background: var(--border); }
   .agent-bar-main { background: var(--accent); height: 100%; }
-  .agent-bar-sub { background: var(--accent2); height: 100%; }
+  .agent-bar-sub { background: var(--sub); height: 100%; }
   .agent-legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 5px; font-size: 10px; color: var(--muted); font-variant-numeric: tabular-nums; }
   .agent-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 3px; vertical-align: middle; }
-  .row-subagent td:first-child { color: var(--accent2); font-weight: 600; }
+  .row-subagent td:first-child { color: var(--sub); font-weight: 600; }
   .agent-breakdown { margin-top: 4px; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
   .agent-breakdown table { width: 100%; border-collapse: collapse; }
   .agent-breakdown th, .agent-breakdown td { padding: 3px 6px; font-size: 10px; }
@@ -643,25 +648,49 @@ function renderFull(s) {
   var cumInput = s.cumulativeInputTokens + s.cumulativeCacheReadTokens;
   var cumHitRate = cumInput > 0 ? (s.cumulativeCacheReadTokens / cumInput * 100).toFixed(1) + '%' : '0%';
 
-  // v1.3.0: split main vs subagent usage
+  // v1.3.0: split main vs subagent usage.
+  // Prefer the authoritative stats computed from the full message list — the
+  // table only carries a recent window, which must never drive the split.
   var allMsgs = s.messages || [];
   var splitMain = { tokens: 0, cost: 0, msgs: 0 };
   var splitSub = { tokens: 0, cost: 0, msgs: 0 };
-  var agentMap = {};
+  var agentList = [];
   var hasSub = false;
-  for (var mi = 0; mi < allMsgs.length; mi++) {
-    var mm = allMsgs[mi];
-    if (mm.isUserMessage) continue;
-    var mmCost = (mm.costDisplay != null ? mm.costDisplay : mm.costCNY) || 0;
-    var mmTok = (mm.inputTokens || 0) + (mm.cacheReadTokens || 0) + (mm.outputTokens || 0);
-    var bucket = mm.source === 'subagent' ? splitSub : splitMain;
-    bucket.tokens += mmTok; bucket.cost += mmCost; bucket.msgs++;
-    if (mm.source === 'subagent') {
-      hasSub = true;
-      var aid = mm.agentId || 'unknown';
-      if (!agentMap[aid]) agentMap[aid] = { id: aid, label: mm.agentLabel || aid.slice(0, 8), tokens: 0, cost: 0, msgs: 0 };
-      agentMap[aid].tokens += mmTok; agentMap[aid].cost += mmCost; agentMap[aid].msgs++;
+
+  if (s.agentStats) {
+    splitMain = {
+      tokens: s.agentStats.main.tokens || 0,
+      cost: s.agentStats.main.cost || 0,
+      msgs: s.agentStats.main.messages || 0,
+    };
+    splitSub = {
+      tokens: s.agentStats.sub.tokens || 0,
+      cost: s.agentStats.sub.cost || 0,
+      msgs: s.agentStats.sub.messages || 0,
+    };
+    agentList = (s.agentStats.agents || []).map(function(a) {
+      return { id: a.id, label: a.label, tokens: a.tokens, cost: a.cost, msgs: a.messages };
+    });
+    hasSub = splitSub.msgs > 0;
+  } else {
+    // Fallback for callers that do not send agentStats (older payloads/tests)
+    var agentMap = {};
+    for (var mi = 0; mi < allMsgs.length; mi++) {
+      var mm = allMsgs[mi];
+      if (mm.isUserMessage) continue;
+      var mmCost = (mm.costDisplay != null ? mm.costDisplay : mm.costCNY) || 0;
+      var mmTok = (mm.inputTokens || 0) + (mm.cacheReadTokens || 0) + (mm.outputTokens || 0);
+      var bucket = mm.source === 'subagent' ? splitSub : splitMain;
+      bucket.tokens += mmTok; bucket.cost += mmCost; bucket.msgs++;
+      if (mm.source === 'subagent') {
+        hasSub = true;
+        var aid = mm.agentId || 'unknown';
+        if (!agentMap[aid]) agentMap[aid] = { id: aid, label: mm.agentLabel || aid.slice(0, 8), tokens: 0, cost: 0, msgs: 0 };
+        agentMap[aid].tokens += mmTok; agentMap[aid].cost += mmCost; agentMap[aid].msgs++;
+      }
     }
+    agentList = Object.keys(agentMap).map(function(k) { return agentMap[k]; })
+      .sort(function(a, b) { return b.cost - a.cost; });
   }
   var splitCostTotal = splitMain.cost + splitSub.cost;
   var subCostPct = splitCostTotal > 0 ? splitSub.cost / splitCostTotal * 100 : 0;
@@ -678,7 +707,7 @@ function renderFull(s) {
       '</div>' +
       '<div class="agent-legend">' +
         '<span><span class="agent-dot" style="background:var(--accent)"></span>' + STR.mainAgent + ' ' + fmtCost(splitMain.cost) + ' &middot; ' + mainCostPct.toFixed(1) + '%</span>' +
-        '<span><span class="agent-dot" style="background:var(--accent2)"></span>' + STR.subagent + ' ' + fmtCost(splitSub.cost) + ' &middot; ' + subCostPct.toFixed(1) + '%</span>' +
+        '<span><span class="agent-dot" style="background:var(--sub)"></span>' + STR.subagent + ' ' + fmtCost(splitSub.cost) + ' &middot; ' + subCostPct.toFixed(1) + '%</span>' +
       '</div>' +
     '</div>';
   }
@@ -688,8 +717,6 @@ function renderFull(s) {
   if (hasSub) {
     var abEl0 = document.getElementById('agentBreakdown');
     var abOpen = !!(abEl0 && abEl0.style.display !== 'none');
-    var agentList = Object.keys(agentMap).map(function(k) { return agentMap[k]; })
-      .sort(function(a, b) { return b.cost - a.cost; });
     agentBreakdownHtml = '<div style="margin-bottom:10px">' +
       '<button class="model-btn" data-action="toggle-agent">&#128193; ' + STR.agentBreakdown + ' (' + agentList.length + ')</button>' +
       '<div id="agentBreakdown" style="' + (abOpen ? 'display:block' : 'display:none') + ';margin-top:4px">' +

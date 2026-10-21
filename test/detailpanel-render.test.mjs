@@ -100,7 +100,7 @@ function bootWebview() {
     `${match[1]}\nreturn { renderFull, setAgentFilter: function (v) { currentAgentFilter = v; } };`,
   );
   const api = factory(documentStub, windowStub, () => vscodeStub);
-  return { api, appEl };
+  return { api, appEl, pageHtml: html };
 }
 
 function sampleSession() {
@@ -203,4 +203,44 @@ test('sub-only filter on a session without subagents shows an empty state', () =
   const html = appEl.innerHTML;
   assert.equal(countRows(html), 1);
   assert.ok(html.includes('empty-row'));
+});
+
+test('agentStats drives the split even when the table window holds only subagents', () => {
+  const { api, appEl } = bootWebview();
+  const session = sampleSession();
+  // The live accumulator appends main first and subagents later, so a truncated
+  // window can contain subagent rows only. The split must not follow that window.
+  session.messages = session.messages.filter((m) => m.source === 'subagent');
+  session.agentStats = {
+    main: { cost: 0.9, tokens: 460000, messages: 1 },
+    sub: { cost: 0.6, tokens: 160000, messages: 1 },
+    agents: [{ id: 'abcdef123456', label: 'abcdef12', cost: 0.6, tokens: 160000, messages: 1 }],
+  };
+  api.renderFull(session);
+  const html = appEl.innerHTML;
+  assert.ok(html.includes('Sub 40.0%'), 'share comes from agentStats');
+  assert.ok(html.includes('0.9000'), 'main cost comes from agentStats, not the window');
+  assert.ok(html.includes('Subagents (1)'), 'breakdown comes from agentStats');
+  assert.ok(!html.includes('0.0000'), 'main is never reported as zero');
+});
+
+test('agentStats suppresses the split when the session had no subagents', () => {
+  const { api, appEl } = bootWebview();
+  const session = sampleSession();
+  session.messages = session.messages.filter((m) => m.source !== 'subagent');
+  session.agentStats = {
+    main: { cost: 1.5, tokens: 620000, messages: 2 },
+    sub: { cost: 0, tokens: 0, messages: 0 },
+    agents: [],
+  };
+  api.renderFull(session);
+  assert.ok(!appEl.innerHTML.includes('Agent split'));
+});
+
+test('split bar colours: main green, subagent purple', () => {
+  const { pageHtml } = bootWebview();
+  assert.ok(pageHtml.includes('--sub: var(--vscode-charts-purple'), 'purple subagent variable');
+  assert.ok(pageHtml.includes('.agent-bar-main { background: var(--accent);'), 'main bar uses green accent');
+  assert.ok(pageHtml.includes('.agent-bar-sub { background: var(--sub);'), 'sub bar uses purple');
+  assert.ok(pageHtml.includes('color: var(--sub);'), 'subagent chip/row use purple');
 });

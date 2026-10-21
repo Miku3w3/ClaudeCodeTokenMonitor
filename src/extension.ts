@@ -12,6 +12,7 @@ import {
 import { normalizeUsage, isBetterSnapshot } from './core/usage';
 import { TranscriptTailer } from './core/transcriptTailer';
 import { replayTranscriptLines, type TranscriptSource } from './core/replay';
+import { buildAgentStats, recentMessages } from './core/agentView';
 import { claudeDir, tokenMonitorDir, tokenTrackerDir, transcriptPath as getTranscriptPath } from './utils/paths';
 import type { Currency, PerMessageStats, SessionPidFile, ClaudeReadableData, TimeRange, AggregatedData, SessionIndexEntry, ModelStatEntry } from './model/types';
 import { DetailPanel } from './ui/DetailPanel';
@@ -822,6 +823,7 @@ function handleSelectSession(sessionId: string, postMsg?: (msg: any) => void): v
     totalTokens,
     messageCount: entry.messageCount,
     messages: toDisplayMessages(msgs),
+    agentStats: buildPanelAgentStats(msgs),
     lastUpdatedAt: new Date(entry.lastUpdatedAt).toISOString(),
     turnAiTimeMs: lastAsst?.turnAiTimeMs ?? 0,
     lang: currentConfig.resolvedLanguage,
@@ -984,13 +986,19 @@ function buildModelStats(): Array<{ model: string; cost: number; tokens: number;
   return buildModelStatsFromMessages(messages);
 }
 
-/** Copy the last 200 messages and attach the display-currency cost for the UI. */
+/** Copy the last 200 messages (chronological) and attach the display-currency cost. */
 function toDisplayMessages(list: PerMessageStats[]): PerMessageStats[] {
   const currency = currentConfig.resolvedCurrency;
-  return list.slice(-200).map(m => ({
+  return recentMessages(list, 200).map(m => ({
     ...m,
     costDisplay: costInDisplayCurrency(m.costCNY, currency),
   }));
+}
+
+/** Main/subagent split for the panel — always computed from the full message list. */
+function buildPanelAgentStats(list: PerMessageStats[]) {
+  const currency = currentConfig.resolvedCurrency;
+  return buildAgentStats(list, cny => costInDisplayCurrency(cny, currency));
 }
 
 function pushToWebview(): void {
@@ -1006,6 +1014,7 @@ function pushToWebview(): void {
     cumulativeCacheReadTokens: cumulativeCacheRead, cumulativeCostCNY: displayCumulativeCost,
     totalTokens, messageCount,
     messages: toDisplayMessages(messages),
+    agentStats: buildPanelAgentStats(messages),
     lastUpdatedAt: new Date().toISOString(),
     turnAiTimeMs: turnAiAccumulatorMs,
     lang: currentConfig.resolvedLanguage,
@@ -1033,6 +1042,7 @@ function pushToWebviewPanel(panel: vscode.WebviewPanel): void {
       cumulativeCacheReadTokens: cumulativeCacheRead, cumulativeCostCNY: displayCumulativeCost,
       totalTokens, messageCount,
       messages: toDisplayMessages(messages),
+      agentStats: buildPanelAgentStats(messages),
       lastUpdatedAt: new Date().toISOString(),
       turnAiTimeMs: turnAiAccumulatorMs,
       lang: currentConfig.resolvedLanguage,
