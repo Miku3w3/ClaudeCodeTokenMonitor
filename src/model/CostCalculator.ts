@@ -13,5 +13,6 @@ export {
   setCustomProviders,
   setPricingCatalog,
   getPricingCatalog,
+  isBailianOffPeak,
   isDeepSeekOffPeak,
 } from './pricing';

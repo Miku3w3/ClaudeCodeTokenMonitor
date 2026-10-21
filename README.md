@@ -24,8 +24,8 @@ $(pulse) Fix auth bug | deepseek-v4.1-flash | AI 3.2s | 85K ¥0.012 | total 1.2M
 | **Per-message table** | Every API response with its own token counts, cache usage, duration and cost. De-duplicated by `message.id`, so streamed snapshots are never counted twice. |
 | **Sessions dashboard** | Current day / week / month / year / all time, grouped by model when you need it. The full dashboard opens in an editor tab from the status-bar button; the bottom-panel view is opt-in. |
 | **Session picker** | Follow any recorded session, not only the newest one. Subagent transcripts are included in both live and historical totals. |
-| **Accurate pricing** | 40+ models from Anthropic, OpenAI, Google, Alibaba Bailian (DeepSeek + Qwen), Moonshot, Zhipu, ByteDance, Baidu, xAI and Mistral. Bailian peak/off-peak pricing is applied automatically. |
-| **Offline-first** | Prices ship inside the extension. Updates are optional and fetched from mirror hosts that work behind restrictive networks. |
+| **Accurate pricing** | 100+ models from Anthropic, OpenAI, Google, Alibaba Bailian (DeepSeek + Qwen), Moonshot, Zhipu, ByteDance, Baidu, xAI and Mistral. Peak/off-peak pricing is applied per channel (Bailian and DeepSeek official use different windows). |
+| **Offline-first** | Prices ship inside the extension. Updates are optional and fetched from an Aliyun OSS catalog that works behind restrictive networks. |
 | **Custom models** | Add your own provider or private deployment from the command palette — no JSON editing. |
 | **11 languages · 7 currencies** | en, zh-CN, zh-TW, ja, ko, es, ar, pt, de, fr, ru · CNY, USD, EUR, JPY, KRW, GBP, auto. |
 | **Budget warning** | Get a nudge when the cumulative cost passes a threshold you set. |
@@ -53,10 +53,10 @@ Claude Code streams several snapshots of the same assistant message into the tra
 ## Pricing
 
 - **Bundled catalog** — `pricing.json` ships with every release, so costs are correct offline.
-- **Daily updates** — a GitHub Action refreshes the catalog once a day and opens a pull request. Each provider is merged, never replaced: a failed scrape keeps yesterday's prices, and any change larger than 5× is rejected as a parsing error.
+- **Daily updates** — a cron job on the maintainer's server refreshes the catalog once a day and publishes it to Aliyun OSS; the extension reads it from there. Each provider is merged, never replaced: a failed scrape keeps yesterday's prices, and any change larger than 5× is rejected as a parsing error.
 - **Human-reviewed overrides** — `pricing-overrides.json` holds prices checked by hand (for example Bailian peak/off-peak rates) and always wins over automated data.
 - **Unknown models** — shown as `—` rather than guessed. Add a custom model if you use a private deployment.
-- **Peak hours** — Alibaba Bailian charges different rates on Beijing workdays 09:00–12:00 and 14:00–18:00; the extension picks the right rate from each message timestamp.
+- **Peak hours** — Alibaba Bailian is peak every day from 08:00 to 22:00 Beijing time. DeepSeek's official API is peak Monday–Friday 09:00–12:00 and 14:00–18:00, excluding statutory holidays. The extension picks the right rate from each message timestamp.
 
 ## Settings
 
@@ -73,7 +73,7 @@ Search `claudeTokenMonitor` in Settings (`Ctrl+,`):
 | `budgetWarning` | Warn above this cumulative cost (0 = off) | `0` |
 | `pollIntervalMs` | Transcript poll interval in ms | `2000` |
 | `pricing.autoUpdate` | Refresh pricing and exchange rates automatically | `true` |
-| `pricing.updateUrl` | Custom catalog URL (empty = built-in mirrors) | `""` |
+| `pricing.updateUrl` | Custom catalog URL (empty = Aliyun OSS catalog) | `""` |
 | `showPanelView` | Show the monitor tab in the bottom panel | `false` |
 
 ## Commands
@@ -145,8 +145,8 @@ $(pulse) 修复登录 Bug | deepseek-v4.1-flash | AI 3.2s | 本轮 85K ¥0.012 |
 | **逐条消息明细** | 每条 API 响应的 token、缓存、耗时、费用；按 `message.id` 去重，流式快照不会重复计数 |
 | **会话看板** | 当前 / 每天 / 每周 / 每月 / 每年 / 全部，可按模型分组；点击状态栏按钮在编辑器标签页打开完整看板，底部面板改为自行开启 |
 | **会话选择** | 可跟随任意历史会话，不只是最新会话；子代理（subagent）的用量也计入实时与历史统计 |
-| **定价准确** | 内置 40+ 模型：Anthropic、OpenAI、Google、阿里云百炼（DeepSeek + Qwen）、Moonshot、智谱、豆包、文心、xAI、Mistral；自动识别百炼高峰/低谷价 |
-| **离线优先** | 定价随插件打包；联网更新可选，并使用国内可达的镜像源 |
+| **定价准确** | 内置 100+ 模型：Anthropic、OpenAI、Google、阿里云百炼（DeepSeek + Qwen）、Moonshot、智谱、豆包、文心、xAI、Mistral；峰谷价按渠道区分（百炼与 DeepSeek 官方规则不同） |
+| **离线优先** | 定价随插件打包；联网更新可选，目录放在阿里云 OSS，国内网络可直连 |
 | **自定义模型** | 命令面板引导添加私有部署或新模型，无需手写 JSON |
 | **11 种语言 · 7 种货币** | en / zh-CN / zh-TW / ja / ko / es / ar / pt / de / fr / ru · CNY / USD / EUR / JPY / KRW / GBP / 自动 |
 | **预算提醒** | 累计费用超过设定阈值时提醒 |
@@ -174,10 +174,10 @@ Claude Code 会把同一条 assistant 消息的多个流式快照写入 transcri
 ## 定价说明
 
 - **内置目录**：`pricing.json` 随插件发布，离线也能算对。
-- **每日更新**：GitHub Action 每天更新目录并创建 PR。更新是“合并”而不是“覆盖”：某个供应商抓取失败就保留昨天的价格，单项价格变动超过 5 倍视为解析错误并拒绝。
+- **每日更新**：维护者服务器上的 cron 每天更新目录并发布到阿里云 OSS，扩展从 OSS 读取。更新是“合并”而不是“覆盖”：某个供应商抓取失败就保留昨天的价格，单项价格变动超过 5 倍视为解析错误并拒绝。
 - **人工复核**：`pricing-overrides.json` 里的价格（例如百炼高峰/低谷价）优先级最高。
 - **未知模型**：显示 `—`，绝不按最贵的模型猜价。可自行添加自定义模型。
-- **高峰时段**：阿里云百炼在北京时间工作日 09:00–12:00、14:00–18:00 使用不同价格，插件按每条消息的时间自动选择。
+- **高峰时段**：阿里云百炼每天 08:00–22:00（北京时间）为忙时；DeepSeek 官方为周一至周五 09:00–12:00、14:00–18:00（法定节假日除外）。插件按每条消息的时间自动选择。
 
 ## 设置与命令
 

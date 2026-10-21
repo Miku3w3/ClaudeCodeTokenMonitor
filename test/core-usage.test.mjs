@@ -129,18 +129,20 @@ test('dated Bailian snapshot names resolve through aliases/prefixes', () => {
   assert.equal(detail.amount, 10); // 2 + 8, definitely not r1's 20
 });
 
-test('DeepSeek off-peak pricing applies outside workday hours', () => {
+test('Bailian off-peak pricing applies at night, not on weekends', () => {
   const peak = Date.UTC(2026, 9, 21, 2, 0);     // Wed 10:00 Beijing
   const offPeak = Date.UTC(2026, 9, 20, 19, 0); // Wed 03:00 Beijing
   const weekend = Date.UTC(2026, 9, 24, 2, 0);  // Sat 10:00 Beijing
 
-  assert.equal(pricing.isDeepSeekOffPeak(peak), false);
-  assert.equal(pricing.isDeepSeekOffPeak(offPeak), true);
-  assert.equal(pricing.isDeepSeekOffPeak(weekend), true);
+  assert.equal(pricing.isBailianOffPeak(peak), false);
+  assert.equal(pricing.isBailianOffPeak(offPeak), true);
+  assert.equal(pricing.isBailianOffPeak(weekend), false, 'Bailian has no weekend exception');
+  assert.equal(pricing.isDeepSeekOffPeak(weekend), true, 'the official API does');
 
   const usage = { inputTokens: 1_000_000, cacheReadTokens: 0, outputTokens: 1_000_000 };
   assert.equal(pricing.calculateCostDetail('deepseek-v4.1-flash-1017', usage, peak).amount, 10);
   assert.equal(pricing.calculateCostDetail('deepseek-v4.1-flash-1017', usage, offPeak).amount, 5);
+  assert.equal(pricing.calculateCostDetail('deepseek-v4.1-flash-1017', usage, weekend).amount, 10);
 });
 
 test('cache creation tokens are charged at the cache-write price', () => {

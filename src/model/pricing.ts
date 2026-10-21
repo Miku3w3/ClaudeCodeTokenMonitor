@@ -35,11 +35,6 @@ const PROVIDERS: ProviderMeta[] = [
         offPeak: { cacheHit: 0.02, cacheMiss: 1.0, output: 4.0 },
         verified: 'bailian-2026-10-21', notes: 'cacheHit from secondary source (unverified); cache writes billed as cache miss',
       },
-      'deepseek-v4-pro': {
-        cacheHit: 0.30, cacheMiss: 9.0, output: 27.0,
-        offPeak: { cacheHit: 0.15, cacheMiss: 4.5, output: 13.5 },
-        verified: 'deepseek-official-2026-10-21',
-      },
       'deepseek-v4-pro-0813': {
         cacheHit: 0, cacheMiss: 9.0, output: 27.0,
         offPeak: { cacheHit: 0, cacheMiss: 4.5, output: 13.5 },
@@ -55,11 +50,33 @@ const PROVIDERS: ProviderMeta[] = [
       'qwen-long':          { cacheHit: 0, cacheMiss: 0.50, output: 2.00 },
     },
     aliases: {
-      'deepseek-flash': 'deepseek-v4.1-flash',
       'deepseek-v4.1-flash-1017': 'deepseek-v4.1-flash',
       'deepseek-v4.1-flash-1017-1m': 'deepseek-v4.1-flash',
     },
     matchPattern: /deepseek|qwen|bailian|dashscope/i,
+  },
+  // ── DeepSeek official API ─────────────────────────────────
+  // Deliberately separate from Bailian: the two channels use different peak
+  // windows and, for v4-pro, different prices. A bare `deepseek-v4-pro` name is
+  // treated as the official API; Bailian's dated snapshots (`-0813`, `-0731`,
+  // `-1017`) carry Bailian's own prices.
+  {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    nativeCurrency: 'CNY',
+    models: {
+      'deepseek-flash': {
+        cacheHit: 0.04, cacheMiss: 2.0, output: 8.0,
+        offPeak: { cacheHit: 0.02, cacheMiss: 1.0, output: 4.0 },
+        verified: 'deepseek-official-2026-10-21',
+      },
+      'deepseek-v4-pro': {
+        cacheHit: 0.30, cacheMiss: 9.0, output: 27.0,
+        offPeak: { cacheHit: 0.15, cacheMiss: 4.5, output: 13.5 },
+        verified: 'deepseek-official-2026-10-21',
+      },
+    },
+    matchPattern: /deepseek/i,
   },
   // ── Anthropic ─────────────────────────────────────────────
   {
@@ -639,10 +656,23 @@ export interface UsageTokens {
 }
 
 /**
- * DeepSeek peak hours (Beijing time): Monday–Friday 09:00–12:00 and
- * 14:00–18:00, excluding Chinese statutory holidays. Everything else — weekends,
- * holidays, nights — is off-peak. The rule belongs to the DeepSeek models, not
- * to the channel: the official API, Bailian and relays all bill the same way.
+ * Aliyun Bailian peak hours (Beijing time): every day 08:00–22:00 is peak,
+ * 22:00–08:00 is off-peak. Weekends and holidays are NOT special-cased — Bailian
+ * bills them with the same daily window. Verified against
+ * https://help.aliyun.com/zh/model-studio/model-pricing (2026-10-21).
+ * Unknown timestamps are treated as peak (the conservative, higher price).
+ */
+export function isBailianOffPeak(timestampMs: number): boolean {
+  if (!Number.isFinite(timestampMs) || timestampMs <= 0) return false;
+  const beijing = new Date(timestampMs + 8 * 3600_000);
+  const minutes = beijing.getUTCHours() * 60 + beijing.getUTCMinutes();
+  return minutes < 8 * 60 || minutes >= 22 * 60;
+}
+
+/**
+ * DeepSeek official API peak hours (Beijing time): Monday–Friday 09:00–12:00
+ * and 14:00–18:00, excluding Chinese statutory holidays. Everything else —
+ * weekends, holidays, nights — is off-peak.
  * Unknown timestamps are treated as peak (the conservative, higher price).
  */
 export function isDeepSeekOffPeak(timestampMs: number): boolean {
@@ -680,11 +710,14 @@ export function calculateCostDetail(
   }
 
   let effective: ModelPricing = pricing;
-  // Only DeepSeek entries carry an `offPeak` table, so this applies to
-  // DeepSeek models whichever channel (official API, Bailian, relay) served
-  // them — the price rule is a property of the model, not of the provider.
-  if (pricing.offPeak && isDeepSeekOffPeak(timestampMs)) {
-    effective = { ...pricing, ...pricing.offPeak };
+  // Each channel has its own peak window: Bailian bills 08:00–22:00 every day,
+  // the official API bills weekdays 09:00–12:00 / 14:00–18:00. Pick the rule
+  // from the resolved provider, then apply the model's off-peak table.
+  if (pricing.offPeak) {
+    const offPeak = pricing.providerId === 'aliyun-bailian'
+      ? isBailianOffPeak(timestampMs)
+      : isDeepSeekOffPeak(timestampMs);
+    if (offPeak) effective = { ...pricing, ...pricing.offPeak };
   }
 
   const input = finite(usage.inputTokens);

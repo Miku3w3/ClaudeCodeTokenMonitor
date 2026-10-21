@@ -15,13 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Cost could show `NaN` or `¥0` for unknown models** — every number now passes a single sanitizer, and models without known pricing are shown as `—` instead of being billed at the most expensive provider's rate.
 - **Historical sessions were missing subagent usage** — subagent transcripts (`<session>/subagents/**/*.jsonl`) are now indexed and counted in both live and historical totals.
 - **The status-bar dashboard did not open** — the webview is now a singleton editor panel that survives re-renders, with working settings, session picker, pause and language switching.
-- **Daily pricing updates never reached users** — the updater now writes the v2 catalog, rejects implausible price jumps, keeps human-reviewed Bailian peak/off-peak prices, and opens a reviewable pull request every day.
+- **Daily pricing updates never reached users** — the updater now writes the v2 catalog, rejects implausible price jumps, keeps human-reviewed Bailian peak/off-peak prices, and publishes the result to Aliyun OSS every day.
 - **The extension hijacked the bottom panel** — the panel view is opt-in and hidden by default; the status-bar button opens the full dashboard in an editor tab.
 
 ### Added
 
 - Session picker command (`Claude Code Token Monitor: Select Session to Monitor`) to follow any recorded session instead of only the most recent one.
-- Off-peak pricing for Aliyun Bailian DeepSeek models (Beijing workdays 09:00–12:00 and 14:00–18:00).
+- Channel-aware peak/off-peak pricing: Alibaba Bailian is peak every day 08:00–22:00 Beijing time; DeepSeek's official API is peak Monday–Friday 09:00–12:00 and 14:00–18:00, excluding statutory holidays (91 dates for 2024–2026 are built in).
+- Pricing catalog now covers 11 providers (100+ models). Domestic prices come from each vendor's official pricing page; USD providers use the community-maintained models.dev catalog.
 - `pricing-overrides.json` for human-reviewed prices that automated updates can never overwrite.
 - Automated tests (`npm test`) covering deduplication, pricing, replay and transcript tailing.
 - `pricing.json` schema v2 with provider ids, aliases and per-model verification notes.

@@ -12,17 +12,6 @@
       "verified": "bailian-2026-10-21",
       "notes": "cacheHit from secondary source (unverified); cache writes billed as cache miss"
     },
-    "deepseek-v4-pro": {
-      "cacheHit": 0.3,
-      "cacheMiss": 9,
-      "output": 27,
-      "offPeak": {
-        "cacheHit": 0.15,
-        "cacheMiss": 4.5,
-        "output": 13.5
-      },
-      "verified": "deepseek-official-2026-10-21"
-    },
     "deepseek-v4-pro-0813": {
       "cacheHit": 0,
       "cacheMiss": 9,
@@ -44,6 +33,57 @@
         "output": 4.5
       },
       "verified": "bailian-2026-10-21"
+    }
+  },
+  "deepseek": {
+    "deepseek-flash": {
+      "cacheHit": 0.04,
+      "cacheMiss": 2,
+      "output": 8,
+      "offPeak": {
+        "cacheHit": 0.02,
+        "cacheMiss": 1,
+        "output": 4
+      },
+      "verified": "deepseek-official-2026-10-21"
+    },
+    "deepseek-v4-pro": {
+      "cacheHit": 0.3,
+      "cacheMiss": 9,
+      "output": 27,
+      "offPeak": {
+        "cacheHit": 0.15,
+        "cacheMiss": 4.5,
+        "output": 13.5
+      },
+      "verified": "deepseek-official-2026-10-21"
+    }
+  },
+  "zhipu": {
+    "glm-5.3": {
+      "cacheHit": 2,
+      "cacheMiss": 8,
+      "output": 28,
+      "verified": "zhipu-2026-10-21",
+      "notes": "from the 最新模型 table; the AI scrape sometimes merges it into glm-5.3-flashx-legal"
+    },
+    "glm-5.3-flash": {
+      "cacheHit": 0.23,
+      "cacheMiss": 0.8,
+      "output": 2.8,
+      "verified": "zhipu-2026-10-21"
+    },
+    "glm-5.3-flashx": {
+      "cacheHit": 0.57,
+      "cacheMiss": 2,
+      "output": 7,
+      "verified": "zhipu-2026-10-21"
+    },
+    "glm-5.3-flashx-legal": {
+      "cacheHit": 0.57,
+      "cacheMiss": 2,
+      "output": 7,
+      "verified": "zhipu-2026-10-21"
     }
   }
 }

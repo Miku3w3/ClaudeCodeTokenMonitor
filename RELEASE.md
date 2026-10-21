@@ -46,19 +46,17 @@ npx vsce package  # 生成 claude-code-token-monitor-x.y.z.vsix
 - 自动(推荐):在仓库 **Settings → Secrets and variables → Actions** 添加 **`MARKETPLACE_PUBLISHER_TOKEN`**(Azure DevOps PAT,只勾 Marketplace 范围)。
   存在该 secret 时 workflow 会自动 `vsce publish --skip-duplicate`;没有则只在 GitHub 发 Release,并输出一条 notice。
 
-## 每日定价更新 workflow
+## 每日定价更新(服务器 → 阿里云 OSS)
 
-`.github/workflows/update-pricing.yml` 每天 03:17 UTC(北京时间 11:17)运行:
+定价由维护者服务器的 cron 每天 03:17 生成,上传到 `cctm-pricing` Bucket,扩展从 OSS 读取。
+仓库里**没有**定价 workflow(GitHub Actions 版已于 2026-10-21 删除,避免与服务器双跑)。
+完整部署手册见 `docs/pricing-hosting.md`。
 
-1. 校验 `pricing.json`
-2. 用 AI 抓取各供应商官网价格(需要 **`BAILIAN_API_KEY`**,也支持 `DEEPSEEK_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_API_KEY`)
-3. 合并而非覆盖:抓取失败保留旧价,单项变动超过 5 倍视为解析错误被拒绝
-4. 应用 `pricing-overrides.json`(人工复核价,优先级最高)
-5. 校验通过后推到 `chore/daily-pricing` 分支并开/更新一个 PR
+要点:
 
-没有配置任何 AI key 时 workflow 不会失败,只输出 notice 并跳过更新。
-
-人工复核清单写在 PR 正文里;合并后 `master` 上的 `pricing.json` 就是最新版,扩展通过 jsDelivr / ghproxy 等镜像拉取。
+1. 抓取失败保留旧价,单项变动超过 5 倍视为解析错误被拒绝
+2. `pricing-overrides.json`(人工复核价)优先级最高
+3. 上传必须带 `--acl public-read`,否则对象变私有、线上 403
 
 ## 常用命令速查
 

@@ -78,11 +78,36 @@ const SOURCES = [
     id: 'aliyun-bailian',
     name: 'Aliyun Bailian',
     currency: 'CNY',
+    // The old /models pages are JS-rendered and contain model names but no
+    // prices. /model-pricing is a static page with the complete Beijing table.
     urls: [
-      'https://help.aliyun.com/zh/model-studio/models',
-      'https://help.aliyun.com/zh/model-studio/getting-started/models',
+      'https://help.aliyun.com/zh/model-studio/model-pricing',
+      'https://help.aliyun.com/zh/model-studio/billing-for-model-studio',
     ],
     search: '阿里云百炼 模型 计费 价格 每千 tokens',
+    hints: 'This is Aliyun Bailian. Use ONLY the 华北 2（北京） (mainland Beijing) table. ' +
+      'Ignore every other region (美国/新加坡/德国/日本/中国香港), Batch discounts, free quotas and example rows. ' +
+      'If a model lists several context-length tiers, use the first (smallest) tier. ' +
+      'If a model lists 忙时 (peak) and 闲时 (off-peak) prices, put the 忙时 values in cacheHit/cacheMiss/output ' +
+      'and add an "offPeak" object with the 闲时 values. ' +
+      'Only include first-party DeepSeek and Qwen text-generation models. ' +
+      'Ignore third-party sections such as DeepSeek-硅基流动, DeepSeek-快手万擎, Kimi, GLM and MiniMax — those are billed by other providers. ' +
+      'Ignore Qwen-Audio, Qwen-Omni, Qwen-VL, image, video, embedding, rerank and OCR models. ' +
+      'Use the base model id (e.g. "qwen3.5-plus"), not dated snapshots (e.g. "qwen3.5-plus-2026-04-20") ' +
+      'and not "-latest" duplicates; when a base id and its snapshots share the same price, keep only the base id.',
+    // The bare v4-pro name belongs to the DeepSeek official API in our catalog
+    // (Bailian's own deployment is the dated -0813 snapshot). Without this the
+    // scrape would add it back to Bailian and shadow the official entry.
+    skipModels: ['deepseek-v4-pro'],
+  },
+  {
+    id: 'deepseek',
+    name: 'DeepSeek',
+    currency: 'CNY',
+    urls: ['https://api-docs.deepseek.com/zh-cn/quick_start/pricing'],
+    hints: 'This is the DeepSeek official API. Use the peak (高峰) column for cacheMiss/output and ' +
+      'put the off-peak (低谷) column in an "offPeak" object. Values are CNY per 1M tokens. ' +
+      'If a cache-hit price is listed, use it for cacheHit; otherwise 0.',
   },
   {
     id: 'anthropic',
@@ -112,20 +137,51 @@ const SOURCES = [
     id: 'zhipu',
     name: 'Zhipu GLM',
     currency: 'CNY',
-    urls: ['https://open.bigmodel.cn/pricing', 'https://docs.bigmodel.cn/cn/guide/start/model-overview'],
+    // open.bigmodel.cn/pricing is a JS shell; the docs page is static and
+    // carries the complete text-model price table.
+    urls: [
+      'https://docs.bigmodel.cn/cn/guide/start/pricing',
+      'https://open.bigmodel.cn/pricing',
+    ],
+    hints: 'Prices are CNY per 1M tokens. Use the text-model table only; ignore image, video, audio, embedding and rerank models. ' +
+      'If a model has several input-length tiers, use the first (smallest) tier. ' +
+      'Columns are input, output, cache storage and cache hit: map cache hit to cacheHit, ignore cache storage. ' +
+      'Ignore "限时免费" rows and per-request / per-minute services.',
+    keepModels: /^glm/i,
   },
   {
     id: 'bytedance',
     name: 'ByteDance Doubao',
     currency: 'CNY',
-    urls: ['https://www.volcengine.com/docs/82379/1099320', 'https://www.volcengine.com/pricing?product=ark'],
+    // www.volcengine.com/docs/82379/1099320 usually returns a JS shell to a
+    // bot; the ark docs host serves the full static table.
+    urls: [
+      'https://ark.volcengine.com/region:cn-beijing/docs/model-pricing',
+      'https://www.volcengine.com/docs/82379/1099320',
+    ],
+    hints: 'Prices are CNY per 1M tokens. Use the 在线推理（常规） text-model table only; ignore 批量推理, 低延迟, TPM, ' +
+      'image, video and embedding models. If a model has several input-length tiers, use the first (smallest) tier. ' +
+      'Columns are input (non-audio), cache storage, cache hit (non-audio) and output: use the non-audio values and ignore audio. ' +
+      'A "-" means no price; use 0 for cacheHit. ' +
+      'Only include ByteDance first-party Doubao/Seed models; ignore third-party models hosted on the platform (DeepSeek, GLM, Kimi, Qwen, etc.).',
+    keepModels: /^doubao-/i,
     search: 'site:volcengine.com 豆包 Doubao 模型 价格 每百万 tokens',
   },
   {
     id: 'baidu',
     name: 'Baidu Ernie',
     currency: 'CNY',
-    urls: ['https://cloud.baidu.com/doc/WENXINWORKSHOP/s/hlrk4akp7'],
+    // The older WENXINWORKSHOP page is a JS shell; the Qianfan billing page
+    // is static and lists every ERNIE model.
+    urls: [
+      'https://cloud.baidu.com/doc/qianfan/s/wmh4sv6ya',
+      'https://cloud.baidu.com/doc/WENXINWORKSHOP/s/hlrk4akp7',
+    ],
+    hints: 'The page lists prices in CNY per 1,000 tokens; CONVERT EVERY VALUE to CNY per 1,000,000 tokens by multiplying by 1000. ' +
+      'Use the 按量后付费 / 在线推理 column, not 批量推理. Ignore per-request search fees. ' +
+      'Use the first context-length tier. Only include text-generation ERNIE models; ignore image, video, embedding and rerank. ' +
+      'Ignore third-party models hosted on Qianfan (DeepSeek, GLM, Kimi, Qwen, etc.).',
+    keepModels: /^ernie/i,
   },
   {
     id: 'xai',
@@ -172,8 +228,13 @@ function getAIConfig() {
         { role: 'system', content: 'You extract structured pricing data. Reply with a single JSON object, no markdown.' },
         { role: 'user', content: msg },
       ],
-      max_tokens: 4096,
+      max_tokens: 8192,
       temperature: 0,
+      // DeepSeek on Bailian thinks by default and burns the whole output
+      // budget on reasoning, returning empty content (finish_reason=length).
+      // Only Bailian accepts this switch; other OpenAI-compatible endpoints
+      // may reject an unknown field.
+      ...(name === 'bailian' ? { thinking: { type: 'disabled' } } : {}),
       response_format: { type: 'json_object' },
     }),
     parseResponse: (data) => parseFirstJson(JSON.parse(data).choices?.[0]?.message?.content),
@@ -205,7 +266,7 @@ function getAIConfig() {
       model: 'claude-sonnet-4-5',
       buildBody: (msg) => JSON.stringify({
         model: 'claude-sonnet-4-5',
-        max_tokens: 4096,
+        max_tokens: 8192,
         system: 'You extract structured pricing data. Reply with a single JSON object, no markdown.',
         messages: [{ role: 'user', content: msg }],
       }),
@@ -232,12 +293,21 @@ function callAI(ai, userMessage) {
     headers.Authorization = `Bearer ${ai.key}`;
   }
   const send = (agent) => new Promise((resolve, reject) => {
-    const req = https.request({ hostname: ai.hostname, path: ai.path, method: 'POST', agent: agent || undefined, headers, timeout: 60000 }, (res) => {
+    const req = https.request({ hostname: ai.hostname, path: ai.path, method: 'POST', agent: agent || undefined, headers, timeout: 180000 }, (res) => {
       let data = '';
       res.on('data', (c) => { data += c; });
       res.on('end', () => {
         if (res.statusCode !== 200) return reject(new Error(`API ${res.statusCode}: ${data.slice(0, 200)}`));
-        try { resolve(ai.parseResponse(data)); } catch (e) { reject(e); }
+        try {
+          const parsed = JSON.parse(data);
+          const result = ai.parseResponse(data);
+          if (!result) {
+            const choice = parsed.choices && parsed.choices[0];
+            console.log(`    AI content unusable (finish_reason=${choice && choice.finish_reason}, ` +
+              `chars=${(choice && choice.message && choice.message.content || '').length})`);
+          }
+          resolve(result);
+        } catch (e) { reject(e); }
       });
     });
     req.on('error', reject);
@@ -445,11 +515,28 @@ async function extractProvider(ai, source) {
       if (text.length < 200) continue;
       const json = await callAI(ai,
         `Extract the official list price of every text-generation model from the page below.\n` +
-        `Return one JSON object shaped as {"model-key": {"cacheHit": number, "cacheMiss": number, "output": number}}.\n` +
+        `Return one JSON object shaped as {"model-key": {"cacheHit": number, "cacheMiss": number, "output": number, "offPeak": {"cacheHit": number, "cacheMiss": number, "output": number}}}.\n` +
+        `"offPeak" is optional: include it only when the page lists a separate off-peak (闲时/低谷) price.\n` +
         `All values are ${source.currency} per 1,000,000 tokens. cacheMiss is normal input, cacheHit is cached input (0 if the model has no cache discount), output is generated output.\n` +
+        (source.hints ? `RULES FOR THIS SOURCE:\n${source.hints}\n` : '') +
         `Use lowercase model keys exactly as published (e.g. "claude-sonnet-4-5", "deepseek-v4.1-flash"). Do not invent models, do not include free/example/error rows.\n\n` +
         `PAGE (${url}):\n${text}`);
       const models = sanitizeExtraction(json);
+      if (process.env.DEBUG_PRICING === '1') {
+        console.log(`    raw AI keys: ${Object.keys(json || {}).join(', ')}`);
+      }
+      for (const key of source.skipModels || []) delete models[key];
+      if (source.keepModels) {
+        for (const key of Object.keys(models)) {
+          if (!source.keepModels.test(key)) delete models[key];
+        }
+      }
+      if (Object.keys(models).length === 0) {
+        console.log(json
+          ? `    AI returned ${Object.keys(json).length} top-level key(s), none passed validation: ` +
+            JSON.stringify(Object.entries(json).slice(0, 3)).slice(0, 600)
+          : '    AI reply was not valid JSON');
+      }
       if (Object.keys(models).length > 0) return { models, from: url };
     } catch (e) {
       console.log(`    ${url} failed: ${e.message}`);
@@ -462,9 +549,16 @@ async function extractProvider(ai, source) {
       if (text.length > 200) {
         const json = await callAI(ai,
           `From these search results, extract the current official ${source.name} model list prices.\n` +
-          `Return JSON as {"model-key": {"cacheHit": number, "cacheMiss": number, "output": number}} in ${source.currency} per 1M tokens.\n` +
+          `Return JSON as {"model-key": {"cacheHit": number, "cacheMiss": number, "output": number, "offPeak": {"cacheHit": number, "cacheMiss": number, "output": number}}} in ${source.currency} per 1M tokens.\n` +
+          (source.hints ? `RULES FOR THIS SOURCE:\n${source.hints}\n` : '') +
           `Do not invent models.\n\nRESULTS:\n${text}`);
         const models = sanitizeExtraction(json);
+        for (const key of source.skipModels || []) delete models[key];
+        if (source.keepModels) {
+          for (const key of Object.keys(models)) {
+            if (!source.keepModels.test(key)) delete models[key];
+          }
+        }
         const from = 'web-search';
         if (Object.keys(models).length > 0) return { models, from };
       }
