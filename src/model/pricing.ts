@@ -599,9 +599,26 @@ export function resolvePricing(
 // Exchange rates
 // ═══════════════════════════════════════════════════════════════
 
+/**
+ * Where the rates currently in effect came from.
+ *  - `remote`  — fetched from the rate API this session
+ *  - `cache`   — restored from a previous run's cache file
+ *  - `builtin` — the compiled-in DEFAULT_RATES table
+ *
+ * A rate is *always* in effect (the built-in table is the floor), so the UI
+ * must never describe the state as "unknown" — only as less fresh.
+ */
+export type RatesSource = 'remote' | 'cache' | 'builtin';
+
 let customRates: Record<string, number> = {};
 let ratesUpdatedAt = 0;
-export function setCustomRates(rates: Record<string, number>, updatedAt?: number): void {
+let ratesSource: RatesSource = 'builtin';
+
+export function setCustomRates(
+  rates: Record<string, number>,
+  updatedAt?: number,
+  source?: RatesSource,
+): void {
   const sanitized: Record<string, number> = {};
   if (rates) {
     for (const [k, v] of Object.entries(rates)) {
@@ -611,8 +628,13 @@ export function setCustomRates(rates: Record<string, number>, updatedAt?: number
   }
   customRates = sanitized;
   if (updatedAt) ratesUpdatedAt = updatedAt;
+  if (source) ratesSource = source;
 }
 export function getRatesUpdatedAt(): number { return ratesUpdatedAt; }
+export function getRatesSource(): RatesSource { return ratesSource; }
+
+/** True once a real fetched/restored rate table is in effect. */
+export function hasFetchedRates(): boolean { return ratesSource !== 'builtin'; }
 
 function getRate(code: string): number {
   const upper = (code || '').toUpperCase();

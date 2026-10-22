@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.1] - 2026-10-22
+
+### Fixed
+
+- **The status bar stopped following the conversation on screen** — the 1.3.0 rewrite dropped the tab-following logic and always displayed whichever transcript had been written most recently, so a session running in another window or another project would hijack the display. The status bar again follows the Claude Code conversation tab that is on screen (matched by its session title, including VS Code's truncated labels and labels that no longer track the newest message), falls back to the freshest session **inside the current workspace** rather than anywhere on disk, and never blanks itself just because the active tab is a source file. A command-palette pick still wins until you move to a different conversation.
+- **The tooltip showed "exchange rate unknown" whenever the display currency differed from the model's pricing currency** — the rate APIs were only tried over a direct connection, so a network that reaches the internet through a proxy (or blocks those hosts) never got a rate, and the label stayed at "unknown" even though a working built-in rate table was already in use. Rates are now fetched directly first and retried through the configured `http.proxy`, and the tooltip reports the real provenance — *fetched N minutes ago*, *cached*, or *built-in* — instead of claiming the rate is unknown.
+- **Exchange rates were never persisted** — the cached catalog carried no `rates` field, so every restart began with no rate history at all. The fetched table (and its timestamp) is now written to the cache and restored on the next start, which keeps the tooltip accurate while offline.
+- **A dead rate endpoint burned 8 seconds of every refresh** — `api.exchangerate-api.com/v6` returns 404 without an API key. It is replaced by `frankfurter.dev`, and the rate phase is capped at 6 seconds so the catalog mirrors keep their share of the fetch budget.
+
+### Added
+
+- `claudeTokenMonitor.followActiveTab` (default `true`) — set it to `false` to always show the session that produced the latest output instead of the conversation tab on screen.
+
+---
+
 ## [1.3.0] - 2026-10-21
 
 ### Fixed

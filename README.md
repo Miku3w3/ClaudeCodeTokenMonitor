@@ -1,6 +1,6 @@
 # Claude Code Token Monitor
 
-[![Marketplace](https://img.shields.io/badge/VS%20Marketplace-v1.3.0-007ACC?logo=visualstudiocode&logoColor=white)](https://marketplace.visualstudio.com/items?itemName=miku3w3.claude-code-token-monitor)
+[![Marketplace](https://img.shields.io/badge/VS%20Marketplace-v1.3.1-007ACC?logo=visualstudiocode&logoColor=white)](https://marketplace.visualstudio.com/items?itemName=miku3w3.claude-code-token-monitor)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![VS Code](https://img.shields.io/badge/VS%20Code-%E2%89%A51.90-007ACC)](https://code.visualstudio.com/)
 
@@ -14,6 +14,12 @@ Claude Code writes a JSONL transcript for every session. This extension reads th
 $(pulse) Fix auth bug | AI time 3.2s | 85.0K ¥0.0120 | Total 1.2M ¥0.1900
 ```
 
+![Status bar](docs/images/statusbar.png)
+
+Hover for the full breakdown — including the exchange rate in effect:
+
+![Hover breakdown](docs/images/tooltip.png)
+
 ---
 
 ## Features
@@ -23,12 +29,14 @@ $(pulse) Fix auth bug | AI time 3.2s | 85.0K ¥0.0120 | Total 1.2M ¥0.1900
 | **Live status bar** | Session title, current model, turn AI time, turn tokens/cost and cumulative totals. Hover for the full breakdown: input, cache hits, cache misses, output, hit rate. |
 | **Per-message table** | Every API response with its own token counts, cache usage, duration and cost. De-duplicated by `message.id`, so streamed snapshots are never counted twice. |
 | **Sessions dashboard** | Current day / week / month / year / all time, grouped by model when you need it. The full dashboard opens in an editor tab from the status-bar button; the bottom-panel view is opt-in. |
-| **Session picker** | Follow any recorded session, not only the newest one. Subagent transcripts are included in both live and historical totals. |
-| **Accurate pricing** | 178 models from Anthropic, OpenAI, Google, Alibaba Bailian (DeepSeek + Qwen), Moonshot, Zhipu, ByteDance, Baidu, xAI and Mistral — 11 providers. Peak/off-peak pricing is applied per channel (Bailian and DeepSeek official use different windows). |
+| **Follows what you see** | The status bar tracks the Claude Code conversation tab that is on screen, not whichever session wrote last. Pick any recorded session from the command palette to override it. Subagent transcripts are included in both live and historical totals. |
+| **Accurate pricing** | 180 models from Anthropic, OpenAI, Google, Alibaba Bailian (DeepSeek + Qwen), Moonshot, Zhipu, ByteDance, Baidu, xAI and Mistral — 11 providers. Peak/off-peak pricing is applied per channel (Bailian and DeepSeek official use different windows). |
 | **Offline-first** | Prices ship inside the extension. Updates are optional and fetched from an Aliyun OSS catalog that works behind restrictive networks. |
 | **Custom models** | Add your own provider or private deployment from the command palette — no JSON editing. |
 | **11 languages · 7 currencies** | en, zh-CN, zh-TW, ja, ko, es, ar, pt, de, fr, ru · CNY, USD, EUR, JPY, KRW, GBP, auto. |
 | **Budget warning** | Get a nudge when the cumulative cost passes a threshold you set. |
+
+![Token Monitor dashboard](docs/images/dashboard.png)
 
 ## Quick start
 
@@ -70,6 +78,7 @@ Search `claudeTokenMonitor` in Settings (`Ctrl+,`):
 | `customModels` | Custom model pricing entries | `[]` |
 | `statusBar.showModelName` | Show the model name in the status bar | `false` |
 | `statusBar.compactMode` | Show only title, total tokens and cost | `false` |
+| `followActiveTab` | Follow the conversation tab on screen instead of the newest output | `true` |
 | `budgetWarning` | Warn above this cumulative cost (0 = off) | `0` |
 | `pollIntervalMs` | Transcript poll interval in ms | `2000` |
 | `pricing.autoUpdate` | Refresh pricing and exchange rates automatically | `true` |
@@ -109,7 +118,7 @@ Search `claudeTokenMonitor` in Settings (`Ctrl+,`):
 
 ```bash
 npm install
-npm test          # compile + 62 unit tests (node:test)
+npm test          # compile + 100 unit tests (node:test)
 npm run watch     # TypeScript watch mode
 npx vsce package  # build a .vsix
 ```
@@ -143,8 +152,8 @@ $(pulse) 修复登录Bug | AI耗时 3.2s | 85.0K ¥0.0120 | 累计 1.2M ¥0.1900
 | **状态栏实时监控** | 会话标题、当前模型、本轮 AI 耗时、本轮 token/费用、累计用量；悬停查看输入、缓存命中、未命中、输出与命中率 |
 | **逐条消息明细** | 每条 API 响应的 token、缓存、耗时、费用；按 `message.id` 去重，流式快照不会重复计数 |
 | **会话看板** | 当前 / 每天 / 每周 / 每月 / 每年 / 全部，可按模型分组；点击状态栏按钮在编辑器标签页打开完整看板，底部面板改为自行开启 |
-| **会话选择** | 可跟随任意历史会话，不只是最新会话；子代理（subagent）的用量也计入实时与历史统计 |
-| **定价准确** | 内置 178 个模型:Anthropic、OpenAI、Google、阿里云百炼（DeepSeek + Qwen）、Moonshot、智谱、豆包、文心、xAI、Mistral，共 11 家厂商；峰谷价按渠道区分（百炼与 DeepSeek 官方规则不同） |
+| **跟随当前会话** | 状态栏跟着当前显示的 Claude Code 会话标签走，而不是“最后写入的那个会话”；也可从命令面板手动指定任意历史会话。子代理（subagent）的用量计入实时与历史统计 |
+| **定价准确** | 内置 180 个模型:Anthropic、OpenAI、Google、阿里云百炼（DeepSeek + Qwen）、Moonshot、智谱、豆包、文心、xAI、Mistral，共 11 家厂商；峰谷价按渠道区分（百炼与 DeepSeek 官方规则不同） |
 | **离线优先** | 定价随插件打包；联网更新可选，目录放在阿里云 OSS，国内网络可直连 |
 | **自定义模型** | 命令面板引导添加私有部署或新模型，无需手写 JSON |
 | **11 种语言 · 7 种货币** | en / zh-CN / zh-TW / ja / ko / es / ar / pt / de / fr / ru · CNY / USD / EUR / JPY / KRW / GBP / 自动 |
@@ -190,7 +199,7 @@ Claude Code 会把同一条 assistant 消息的多个流式快照写入 transcri
 
 ```bash
 npm install
-npm test          # 编译 + 62 个单元测试
+npm test          # 编译 + 100 个单元测试
 npx vsce package  # 打包 .vsix
 ```
 

@@ -13,6 +13,10 @@ import { normalizeUsage, isBetterSnapshot } from './core/usage';
 import { TranscriptTailer } from './core/transcriptTailer';
 import { replayTranscriptLines, type TranscriptSource } from './core/replay';
 import { buildAgentStats, recentMessages } from './core/agentView';
+import {
+  pickSessionForTab, pickNewestSession, cleanTabLabel, normalizeTitle, transcriptLabel,
+  type FollowCandidate,
+} from './core/sessionFollow';
 import { claudeDir, tokenMonitorDir, tokenTrackerDir, transcriptPath as getTranscriptPath } from './utils/paths';
 import type { Currency, PerMessageStats, SessionPidFile, ClaudeReadableData, TimeRange, AggregatedData, SessionIndexEntry, ModelStatEntry } from './model/types';
 import { DetailPanel } from './ui/DetailPanel';
@@ -20,7 +24,7 @@ import type { PanelData } from './ui/DetailPanel';
 import { t, initI18n, isRTL } from './i18n/index';
 import { getConfig } from './config/settings';
 import { checkForUpdates, loadBundledPricing } from './model/pricing-fetcher';
-import { getRatesUpdatedAt } from './model/pricing';
+import { getRatesUpdatedAt, getRatesSource } from './model/pricing';
 import type { ExtensionConfig } from './model/types';
 import * as SessionStore from './data/SessionStore';
 
@@ -60,10 +64,22 @@ let turnAiAccumulatorMs = 0;
 let turnTokens = 0;
 let turnCost = 0;
 
-// Session selection: explicit override set via the "Select Session" command.
-// Without an override the poller follows the most recently modified transcript.
-let activeSessionOverride: { sessionId: string; cwd: string } | null = null;
-const sessionTitleCache = new Map<string, string>();
+// Session following. Precedence:
+//   1. a session picked from the command palette (until the user moves to
+//      another conversation tab),
+//   2. the session whose title matches the conversation tab on screen,
+//   3. the freshest session in this window's workspace,
+//   4. the freshest session anywhere.
+// Rules 2–4 live in core/sessionFollow.ts so they can be unit-tested.
+let manualSessionOverride: { sessionId: string; cwd: string; label: string } | null = null;
+let tabSessionOverride: { sessionId: string; cwd: string } | null = null;
+/** The tab on screen is a brand-new conversation with nothing in it yet. */
+let tabIdle = false;
+/** Last conversation-tab label we acted on. */
+let lastTabLabel: string | null = null;
+let followRetryTimer: ReturnType<typeof setTimeout> | null = null;
+interface SessionTitleEntry { labels: string[]; mtimeMs: number; size: number }
+const sessionTitleCache = new Map<string, SessionTitleEntry>();
 
 // Configuration snapshot (refreshed on change)
 let currentConfig: ExtensionConfig = {} as ExtensionConfig;
@@ -106,67 +122,271 @@ function scanSessions(): Array<{ pid: number; sessionId: string; cwd: string; st
 }
 
 // ─── Title extraction ──────────────────────────────────────
-function getSessionTitle(s: { cwd: string; sessionId: string }): string {
-  const cached = sessionTitleCache.get(s.sessionId);
-  if (cached) return cached;
+/**
+ * How far back a label scan may go.
+ *
+ * A tab keeps the name it was given, so a long-running conversation's tab
+ * label can sit many messages — and many megabytes of tool output — behind the
+ * newest message. The shallow scan covers the common case cheaply; the deep
+ * scan runs only when the active tab's label did not match anything.
+ */
+const LABEL_SCAN = {
+  shallow: { chunks: 64, labels: 12 },
+  deep: { chunks: 512, labels: 200 },
+};
 
+/**
+ * The labels Claude Code may show on this session's conversation tab: the
+ * newest `ai-title` when the transcript has one, then the newest messages the
+ * user actually typed.
+ *
+ * Current CLI builds write no `ai-title` at all — the tab shows a user message
+ * — which is why matching on the indexed first-message title never finds the
+ * tab. Several recent labels are returned because a tab keeps the name it was
+ * given; after a few more messages its label is no longer the newest one.
+ */
+function getSessionLabels(s: { cwd: string; sessionId: string }, deep = false): string[] {
+  const tp = path.join(claudeDir(), 'projects', encodeProjectPath(s.cwd), s.sessionId + '.jsonl');
+  let stat: fs.Stats;
+  try { stat = fs.statSync(tp); } catch { return []; }
+
+  const cacheKey = deep ? `deep:${s.sessionId}` : s.sessionId;
+  const cached = sessionTitleCache.get(cacheKey);
+  if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) return cached.labels;
+
+  const limits = deep ? LABEL_SCAN.deep : LABEL_SCAN.shallow;
+  const userTexts: string[] = [];
+  let aiTitle = '';
   try {
-    const encoded = encodeProjectPath(s.cwd);
-    const tp = path.join(claudeDir(), 'projects', encoded, s.sessionId + '.jsonl');
-    const stat = fs.statSync(tp);
-
-    // Search backwards in 16KB chunks for ai-title
-    let offset = stat.size;
-    while (offset > 0) {
-      const start = Math.max(0, offset - 16384);
-      const len = offset - start;
+    // Read backwards in 64KB chunks. Scanning stops as soon as enough recent
+    // user messages are found, so quiet sessions cost one chunk. This only
+    // runs when a session's transcript changed or a deep scan is requested.
+    let end = stat.size;
+    for (let chunk = 0; chunk < limits.chunks && end > 0; chunk++) {
+      const start = Math.max(0, end - 65536);
+      const len = end - start;
       const buf = Buffer.alloc(len);
       const fd = fs.openSync(tp, 'r');
       fs.readSync(fd, buf, 0, len, start);
       fs.closeSync(fd);
-      const lines = buf.toString('utf-8').split('\n');
-      for (let i = lines.length - 1; i >= 0; i--) {
-        try {
-          const obj = JSON.parse(lines[i]);
-          if (obj.type === 'ai-title' && obj.aiTitle) {
-            sessionTitleCache.set(s.sessionId, obj.aiTitle);
-            return obj.aiTitle;
-          }
-        } catch { /* skip */ }
-      }
-      if (start === 0) break;
-      offset = start;
-    }
 
-    // No ai-title — fall back to first user message text
-    const headBuf = Buffer.alloc(Math.min(8192, stat.size));
-    const fd2 = fs.openSync(tp, 'r');
-    fs.readSync(fd2, headBuf, 0, headBuf.length, 0);
-    fs.closeSync(fd2);
-    for (const line of headBuf.toString('utf-8').split('\n')) {
-      try {
-        const obj = JSON.parse(line);
-        if (obj.type === 'user' && obj.message?.role === 'user') {
-          const content = obj.message.content;
-          if (typeof content === 'string' && content.trim()) {
-            const title = content.trim().slice(0, 40);
-            sessionTitleCache.set(s.sessionId, title);
-            return title;
-          }
-          if (Array.isArray(content)) {
-            for (const c of content) {
-              if (c.type === 'text' && c.text && !c.tool_use_id) {
-                const title = c.text.slice(0, 40);
-                sessionTitleCache.set(s.sessionId, title);
-                return title;
-              }
-            }
-          }
+      const lines = buf.toString('utf-8').split('\n');
+      // A non-zero start can begin mid-line; that fragment is not valid JSON.
+      const first = start === 0 ? 0 : 1;
+      for (let i = lines.length - 1; i >= first; i--) {
+        // Almost every line is assistant output or a tool result; skip those
+        // before paying for JSON.parse.
+        const line = lines[i];
+        if (line.indexOf('"type":"user"') < 0 && line.indexOf('"type":"ai-title"') < 0) continue;
+        let obj: any;
+        try { obj = JSON.parse(line); } catch { continue; }
+        const label = transcriptLabel(obj);
+        if (!label) continue;
+        if (label.kind === 'ai-title') {
+          if (!aiTitle) aiTitle = label.text;
+          continue;
         }
-      } catch { /* skip */ }
+        if (userTexts.length < limits.labels && !userTexts.includes(label.text)) userTexts.push(label.text);
+      }
+
+      if (start === 0) break;
+      end = start;
+      if (userTexts.length >= limits.labels) break;
     }
-  } catch { /* file not found */ }
-  return '';
+  } catch { /* file vanished while reading */ }
+
+  const labels: string[] = [];
+  for (const raw of [aiTitle, ...userTexts]) {
+    if (!raw) continue;
+    const text = raw.length > 200 ? raw.slice(0, 200) : raw;
+    if (!labels.includes(text)) labels.push(text);
+  }
+  sessionTitleCache.set(cacheKey, { labels, mtimeMs: stat.mtimeMs, size: stat.size });
+  return labels;
+}
+
+function getSessionTitle(s: { cwd: string; sessionId: string }): string {
+  return getSessionLabels(s)[0] || '';
+}
+
+/** Title + older labels, with the indexed first-message title as a fallback. */
+function candidateTitles(
+  s: { cwd: string; sessionId: string },
+  fallback: string,
+  deep = false,
+): { title: string; altTitles: string[] } {
+  const labels = getSessionLabels(s, deep);
+  const title = labels[0] || fallback || '';
+  const altTitles = labels.slice(1);
+  if (fallback && fallback !== title) altTitles.push(fallback);
+  return { title, altTitles };
+}
+
+// ─── Follow the conversation on screen ────────────────────────
+// Before 1.3.0 the status bar followed the active Claude Code conversation
+// tab. The rewrite dropped that and simply took the newest transcript, so a
+// background session in another window hijacked the display. These helpers
+// restore the old behaviour and add a workspace fallback.
+
+/** Workspace roots of this window, used to prefer this window's own session. */
+function workspaceRoots(): string[] {
+  const roots: string[] = [];
+  for (const folder of vscode.workspace.workspaceFolders || []) {
+    roots.push(folder.uri.fsPath);
+  }
+  if (roots.length === 0) {
+    const wsFile = vscode.workspace.workspaceFile;
+    if (wsFile && wsFile.scheme === 'file') roots.push(path.dirname(wsFile.fsPath));
+  }
+  return roots;
+}
+
+/** Every session we know about: the persistent index plus running processes. */
+function collectFollowCandidates(liveSessions = scanSessions(), deep = false): FollowCandidate[] {
+  const byId = new Map<string, FollowCandidate>();
+
+  for (const entry of SessionStore.getAllSessions()) {
+    const titles = candidateTitles({ cwd: entry.cwd, sessionId: entry.sessionId }, entry.title || '');
+    byId.set(entry.sessionId, {
+      sessionId: entry.sessionId,
+      cwd: entry.cwd,
+      // The index stores the first message; the tab shows a later one.
+      title: titles.title,
+      altTitles: titles.altTitles,
+      // The index only refreshes the session being followed, so its timestamp
+      // goes stale for every other tab. The transcript's own mtime is the
+      // truth; `getSessionLabels` just stat'ed the file, so the cache holds it.
+      lastUpdatedAt: sessionTitleCache.get(entry.sessionId)?.mtimeMs ?? entry.lastUpdatedAt,
+      live: false,
+    });
+  }
+
+  for (const s of liveSessions) {
+    const tp = path.join(claudeDir(), 'projects', encodeProjectPath(s.cwd), s.sessionId + '.jsonl');
+    let mtime = s.startedAt;
+    try { mtime = fs.statSync(tp).mtimeMs; } catch { /* transcript gone */ }
+    const indexed = byId.get(s.sessionId);
+    const titles = candidateTitles(s, indexed?.title || '', deep);
+    byId.set(s.sessionId, {
+      sessionId: s.sessionId,
+      cwd: s.cwd,
+      title: titles.title,
+      altTitles: [...new Set([...titles.altTitles, ...(indexed?.altTitles || [])])].filter(t => t !== titles.title),
+      lastUpdatedAt: mtime,
+      live: true,
+    });
+  }
+
+  return Array.from(byId.values());
+}
+
+/** The explicit or tab-bound session, dropped when its transcript disappeared. */
+function resolveFollowOverride(): { sessionId: string; cwd: string } | null {
+  const pick = manualSessionOverride || tabSessionOverride;
+  if (!pick) return null;
+
+  const tp = path.join(claudeDir(), 'projects', encodeProjectPath(pick.cwd), pick.sessionId + '.jsonl');
+  if (fs.existsSync(tp)) return { sessionId: pick.sessionId, cwd: pick.cwd };
+
+  if (manualSessionOverride && manualSessionOverride.sessionId === pick.sessionId) {
+    manualSessionOverride = null;
+  } else {
+    tabSessionOverride = null;
+  }
+  return null;
+}
+
+/**
+ * The active tab's label when it is a Claude Code conversation.
+ * Returns null for files, diffs, notebooks, terminals and other extensions'
+ * webviews — those must not change which session is displayed.
+ */
+function activeConversationLabel(): string | null {
+  const tab = vscode.window.tabGroups.activeTabGroup?.activeTab;
+  if (!tab) return null;
+  const input = tab.input;
+  if (
+    input instanceof vscode.TabInputText
+    || input instanceof vscode.TabInputTextDiff
+    || input instanceof vscode.TabInputNotebook
+    || input instanceof vscode.TabInputNotebookDiff
+    || input instanceof vscode.TabInputTerminal
+  ) {
+    return null;
+  }
+  // Only Claude Code's own webview panel. Other webviews (markdown previews,
+  // settings UIs) use arbitrary labels, which would otherwise trigger a
+  // fruitless — and expensive — deep label scan on every switch.
+  const viewType = (input as any)?.viewType;
+  if (typeof viewType !== 'string' || !viewType.toLowerCase().includes('claude')) return null;
+  return cleanTabLabel(tab.label);
+}
+
+/** React to tab switches; cheap enough to also call on a short interval. */
+function onActiveTabChanged(): void {
+  if (!currentConfig.followActiveTab) return;
+  const label = activeConversationLabel();
+  if (label === null) return;           // not a conversation tab — keep the current session
+  if (label === lastTabLabel) return;   // same conversation, nothing to do
+  lastTabLabel = label;
+
+  // A command-palette pick only lasts until the user moves to another
+  // conversation; after that the tab on screen decides again.
+  if (manualSessionOverride && normalizeTitle(manualSessionOverride.label) !== normalizeTitle(label)) {
+    manualSessionOverride = null;
+  }
+
+  applyTabLabel(label, 0);
+}
+
+function applyTabLabel(label: string, attempt: number): void {
+  if (followRetryTimer) { clearTimeout(followRetryTimer); followRetryTimer = null; }
+
+  const roots = workspaceRoots();
+  let match = pickSessionForTab(label, collectFollowCandidates(), roots);
+
+  // A tab keeps the name it was given, so its label can be older than the
+  // recent window — and long tool outputs push it megabytes back. Only on a
+  // miss, scan the running sessions' transcripts in full; that costs a few
+  // hundred milliseconds and must not run on every tab switch.
+  if (match.kind === 'none') {
+    const live = scanSessions();
+    if (live.length > 0) {
+      const deepMatch = pickSessionForTab(label, collectFollowCandidates(live, true), roots);
+      if (deepMatch.kind !== 'none') match = deepMatch;
+    }
+  }
+
+  if (match.kind === 'match') {
+    tabIdle = false;
+    tabSessionOverride = { sessionId: match.session.sessionId, cwd: match.session.cwd };
+    poll();
+    return;
+  }
+
+  if (match.kind === 'empty') {
+    tabIdle = true;
+    tabSessionOverride = null;
+    if (currentSessionId) resetState();
+    updateStatusBar();
+    // The first message may arrive while this tab is already on screen. Keep
+    // checking for a moment so the display starts as soon as it does.
+    scheduleFollowRetry(label, attempt, 4);
+    return;
+  }
+
+  // A new conversation writes its ai-title only after the first message.
+  // Retry a couple of times while the same tab stays active; until then keep
+  // the current session rather than blanking the status bar.
+  scheduleFollowRetry(label, attempt, 2);
+}
+
+function scheduleFollowRetry(label: string, attempt: number, maxAttempts: number): void {
+  if (attempt >= maxAttempts) return;
+  followRetryTimer = setTimeout(() => {
+    followRetryTimer = null;
+    if (lastTabLabel === label) applyTabLabel(label, attempt + 1);
+  }, Math.min(8000, 1000 * Math.pow(2, attempt)));
 }
 
 // ─── Main poll ────────────────────────────────────────────────
@@ -174,27 +394,22 @@ function poll(): void {
   try {
     // 1. Find sessions with live transcripts
     const sessions = scanSessions();
-    if (sessions.length === 0 && !activeSessionOverride) {
+    const override = resolveFollowOverride();
+
+    if (sessions.length === 0 && !override && !tabIdle) {
       if (currentSessionId) resetState();
       updateStatusBar();
       return;
     }
 
-    // 2. Pick the active session
-    let active: { sessionId: string; cwd: string } | null = null;
+    // 2. Pick the active session. An explicit pick wins, then the conversation
+    //    tab on screen, then the freshest session in this window's workspace.
+    let active: { sessionId: string; cwd: string } | null = override;
 
-    if (activeSessionOverride) {
-      const overrideActive = sessions.find(s => s.sessionId === activeSessionOverride!.sessionId);
-      if (overrideActive) {
-        active = overrideActive;
-      } else {
-        const tp = path.join(claudeDir(), 'projects', encodeProjectPath(activeSessionOverride.cwd), activeSessionOverride.sessionId + '.jsonl');
-        if (fs.existsSync(tp)) {
-          active = activeSessionOverride;
-        } else {
-          activeSessionOverride = null;
-        }
-      }
+    if (!active && tabIdle) {
+      if (currentSessionId) resetState();
+      updateStatusBar();
+      return;
     }
 
     if (!active) {
@@ -202,16 +417,20 @@ function poll(): void {
         updateStatusBar();
         return;
       }
-      sessions.sort((a, b) => {
-        const aTp = path.join(claudeDir(), 'projects', encodeProjectPath(a.cwd), a.sessionId + '.jsonl');
-        const bTp = path.join(claudeDir(), 'projects', encodeProjectPath(b.cwd), b.sessionId + '.jsonl');
-        let aMtime = 0, bMtime = 0;
-        try { aMtime = fs.statSync(aTp).mtimeMs; } catch { /* */ }
-        try { bMtime = fs.statSync(bTp).mtimeMs; } catch { /* */ }
-        return bMtime - aMtime;
+      const liveCandidates: FollowCandidate[] = sessions.map(s => {
+        const tp = path.join(claudeDir(), 'projects', encodeProjectPath(s.cwd), s.sessionId + '.jsonl');
+        let lastUpdatedAt = s.startedAt;
+        try { lastUpdatedAt = fs.statSync(tp).mtimeMs; } catch { /* transcript gone */ }
+        return { sessionId: s.sessionId, cwd: s.cwd, title: '', lastUpdatedAt, live: true };
       });
-      active = sessions[0];
+      const newest = pickNewestSession(liveCandidates, workspaceRoots());
+      if (!newest) {
+        updateStatusBar();
+        return;
+      }
+      active = { sessionId: newest.sessionId, cwd: newest.cwd };
     }
+    const activeIsLive = sessions.some(s => s.sessionId === active!.sessionId);
 
     // 3. Build transcript path
     const encoded = encodeProjectPath(active.cwd);
@@ -221,7 +440,7 @@ function poll(): void {
     if (active.sessionId !== currentSessionId) {
       currentSessionId = active.sessionId;
       const indexed = SessionStore.loadIndex().sessions[active.sessionId];
-      currentTitle = indexed?.title || getSessionTitle(active) || '';
+      currentTitle = getSessionTitle(active) || indexed?.title || '';
       budgetWarned = false;
       resetSessionData();
       lastTranscriptPath = tp;
@@ -250,8 +469,9 @@ function poll(): void {
       updateStatusBar();
       writeClaudeReadable();
       pushToWebview();
-      // Persist current session summary to the index
-      persistCurrentSession(active.cwd);
+      // Persist current session summary to the index. A historical session
+      // opened from a tab must not look freshly active in the dashboard.
+      if (activeIsLive) persistCurrentSession(active.cwd);
     } else {
       updateStatusBar();
     }
@@ -279,7 +499,9 @@ function processEvent(
 
   if (event.type === 'ai-title' && event.title) {
     currentTitle = event.title;
-    sessionTitleCache.set(currentSessionId, event.title);
+    let mtimeMs = -1, size = -1;
+    try { const st = fs.statSync(lastTranscriptPath); mtimeMs = st.mtimeMs; size = st.size; } catch { /* */ }
+    sessionTitleCache.set(currentSessionId, { labels: [event.title], mtimeMs, size });
     return true;
   }
 
@@ -676,7 +898,6 @@ function resetState(): void {
   currentSessionId = ''; currentTitle = ''; currentModel = 'unknown';
   resetSessionData();
   lastTranscriptPath = '';
-  activeSessionOverride = null;
   budgetWarned = false;
 }
 
@@ -711,9 +932,11 @@ function calcHitRate(hit: number, total: number): string {
 
 /** Format exchange rate age for display. */
 function formatRatesAge(): string {
+  // A rate is always in effect: remote → cache → built-in table. Only the
+  // freshness differs, so never report the rate as "unknown".
+  if (getRatesSource() === 'builtin') return t('rates.builtin');
   const ts = getRatesUpdatedAt();
-  if (!ts) return t('rates.unknown');
-  if (ts === 1) return t('rates.builtin'); // Built-in, never fetched from remote
+  if (!ts || ts <= 1) return t('rates.builtin');
   const diffMs = Date.now() - ts;
   const mins = Math.floor(diffMs / 60000);
   if (mins < 60) return mins <= 1 ? t('rates.justNow') : t('rates.minutesAgo', { '0': String(mins) });
@@ -1072,7 +1295,7 @@ async function selectSessionToMonitor(): Promise<void> {
 
   const items: Array<vscode.QuickPickItem & { sessionId?: string; cwd?: string; clear?: boolean }> = [
     {
-      label: zh ? '$(refresh) 跟随最近活跃的会话' : '$(refresh) Follow the most recently active session',
+      label: zh ? '$(refresh) 跟随当前显示的会话' : '$(refresh) Follow the conversation on screen',
       description: '',
       clear: true,
     },
@@ -1112,8 +1335,12 @@ async function selectSessionToMonitor(): Promise<void> {
   if (!picked) return;
 
   if (picked.clear) {
-    activeSessionOverride = null;
-    currentSessionId = ''; // force the poller back to the newest session
+    manualSessionOverride = null;
+    tabSessionOverride = null;
+    tabIdle = false;
+    currentSessionId = '';      // force the poller to switch sessions
+    lastTabLabel = null;        // and let the tab on screen decide again
+    onActiveTabChanged();
     poll();
     return;
   }
@@ -1126,7 +1353,16 @@ async function selectSessionToMonitor(): Promise<void> {
     );
     return;
   }
-  activeSessionOverride = { sessionId: picked.sessionId, cwd: picked.cwd };
+  // Remember which tab the pick was made from: moving to another conversation
+  // hands control back to the tab.
+  const title = SessionStore.loadIndex().sessions[picked.sessionId]?.title
+    || getSessionTitle({ sessionId: picked.sessionId, cwd: picked.cwd });
+  manualSessionOverride = {
+    sessionId: picked.sessionId,
+    cwd: picked.cwd,
+    label: title || lastTabLabel || '',
+  };
+  tabIdle = false;
   poll();
 }
 
@@ -1192,6 +1428,15 @@ function refreshConfig(): void {
         if (standalonePanel && standalonePanel.visible) pushToWebviewPanel(standalonePanel);
       }, currentConfig.pollIntervalMs);
     }
+  }
+
+  // Tab following toggled → drop any tab binding and let the poller decide
+  if (!currentConfig.followActiveTab) {
+    tabSessionOverride = null;
+    tabIdle = false;
+    lastTabLabel = null;
+  } else {
+    onActiveTabChanged();
   }
 
   // Always refresh display after config change
@@ -1393,8 +1638,19 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
+  // Follow the conversation tab that is on screen. Re-focusing a tab that is
+  // already active in another group does not fire onDidChangeTabs, so the
+  // label is checked on a short interval too (string comparison only, no I/O).
+  context.subscriptions.push(
+    vscode.window.tabGroups.onDidChangeTabs(() => onActiveTabChanged()),
+    vscode.window.tabGroups.onDidChangeTabGroups(() => onActiveTabChanged())
+  );
+  const tabFocusTimer = setInterval(onActiveTabChanged, 500);
+  context.subscriptions.push({ dispose: () => clearInterval(tabFocusTimer) });
+
   // Initial poll
   poll();
+  onActiveTabChanged();
   pollTimer = setInterval(poll, currentConfig.pollIntervalMs);
 
   console.log('[TokenMonitor] Activated.');
@@ -1405,5 +1661,6 @@ export function deactivate(): void {
   if (standaloneSyncTimer) { clearInterval(standaloneSyncTimer); standaloneSyncTimer = null; }
   if (pricingRefreshTimer) { clearInterval(pricingRefreshTimer); pricingRefreshTimer = null; }
   if (indexRefreshTimer) { clearTimeout(indexRefreshTimer); indexRefreshTimer = null; }
+  if (followRetryTimer) { clearTimeout(followRetryTimer); followRetryTimer = null; }
   console.log('[TokenMonitor] Deactivated.');
 }

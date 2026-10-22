@@ -22,6 +22,7 @@ import { tokenMonitorDir } from '../utils/paths';
 import {
   setCustomRates,
   getRatesUpdatedAt,
+  hasFetchedRates,
   DEFAULT_RATES,
   setPricingCatalog,
   getPricingUpdatedAt,
@@ -31,8 +32,15 @@ import * as vscode from 'vscode';
 
 const RATE_API_URLS = [
   'https://open.er-api.com/v6/latest/USD',
-  'https://api.exchangerate-api.com/v6/latest/USD',
+  'https://api.frankfurter.dev/v1/latest?from=USD',
 ];
+
+/**
+ * Cap for the rate phase. The rate APIs are small JSON documents and answer in
+ * ~1.5s; anything slower is a blocked route, and the catalog still needs the
+ * rest of TOTAL_FETCH_BUDGET.
+ */
+const RATES_TIMEOUT = 6000;
 
 const REPO = 'Miku3w3/ClaudeCodeUsage';
 const RAW = `https://raw.githubusercontent.com/${REPO}/master/pricing.json`;
@@ -86,24 +94,81 @@ function isHttpUrl(value: string): boolean {
 
 function cachePath(): string { return path.join(tokenMonitorDir(), 'pricing-cache.json'); }
 
-/** Fetch exchange rates from free API (no key required). Returns {USD,CNY,...} or null. */
-async function fetchRatesFromAPI(timeoutMs: number = FETCH_TIMEOUT): Promise<Record<string, number> | null> {
+/**
+ * Normalise a rate-API payload into `{ USD: 1, CNY: 6.69, ... }` — units of
+ * each currency per 1 USD, which is the shape `setCustomRates` expects.
+ *
+ * Accepted payloads:
+ *   open.er-api.com      { result: 'success', rates: { USD: 1, CNY: 6.69 } }
+ *   frankfurter.dev      { base: 'USD', rates: { CNY: 6.69 } }   (USD omitted)
+ *   fawazahmed currency  { date: '...', usd: { cny: 6.69 } }     (lowercase)
+ *
+ * Returns null when the payload carries no recognisable rate table, so the
+ * caller can move on to the next source instead of trusting junk.
+ */
+export function normalizeRates(payload: any): Record<string, number> | null {
+  if (!payload || typeof payload !== 'object') return null;
+
+  let raw: Record<string, unknown> | null = null;
+  let usdIncluded = false;
+
+  if (payload.result === 'success' && payload.rates && typeof payload.rates === 'object') {
+    raw = payload.rates;
+    usdIncluded = true;
+  } else if (payload.base === 'USD' && payload.rates && typeof payload.rates === 'object') {
+    raw = payload.rates;
+  } else if (payload.usd && typeof payload.usd === 'object') {
+    raw = payload.usd;
+    usdIncluded = true;
+  }
+  if (!raw) return null;
+
+  const out: Record<string, number> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    const n = Number(v);
+    if (Number.isFinite(n) && n > 0) out[k.toUpperCase()] = n;
+  }
+  if (!usdIncluded) out.USD = 1;
+
+  // A table without any of the currencies we display is not a rate table.
+  if (!out.CNY && !out.EUR && !out.JPY && !out.GBP && !out.KRW) return null;
+  return out;
+}
+
+/**
+ * Fetch exchange rates from a free API (no key required).
+ *
+ * Tries each source directly first — that is the route that works on most
+ * networks, including ones where a Clash-style proxy is running but does not
+ * cover these hosts. When a direct attempt is blocked and the editor has an
+ * `http.proxy` configured, the same URL is retried through that proxy, so a
+ * network that only reaches the outside world via the proxy still gets fresh
+ * rates.
+ *
+ * Returns `{USD, CNY, ...}` (units per 1 USD) or null.
+ */
+export async function fetchRatesFromAPI(
+  timeoutMs: number = FETCH_TIMEOUT,
+  proxyUrl: string = '',
+): Promise<Record<string, number> | null> {
+  if (timeoutMs <= 0) return null;
+  const canProxy = !!proxyUrl && proxyUrl.startsWith('http');
+  let remaining = timeoutMs;
+
   for (const url of RATE_API_URLS) {
-    if (timeoutMs <= 0) return null;
-    try {
-      const data = await new Promise<string>((resolve, reject) => {
-        https.get(url, { timeout: timeoutMs }, (res) => {
-          if (res.statusCode !== 200) { res.resume(); return reject(new Error('status')); }
-          let d = '';
-          res.on('data', (c: string) => { d += c; });
-          res.on('end', () => resolve(d));
-        }).on('error', reject).on('timeout', function (this: any) { this.destroy(); reject(new Error('timeout')); });
-      });
-      const parsed = JSON.parse(data);
-      if (parsed?.result === 'success' && parsed?.rates) {
-        return parsed.rates as Record<string, number>;
-      }
-    } catch { /* try next */ }
+    if (remaining <= 0) break;
+    const started = Date.now();
+    const direct = await fetchDirect(url, Math.min(remaining, RATES_TIMEOUT));
+    const normalizedDirect = normalizeRates(direct);
+    if (normalizedDirect) return normalizedDirect;
+
+    remaining -= Date.now() - started;
+    if (canProxy && remaining > 0) {
+      const viaProxy = await fetchWithProxy(url, proxyUrl, Math.min(remaining, RATES_TIMEOUT));
+      const normalizedProxy = normalizeRates(viaProxy);
+      if (normalizedProxy) return normalizedProxy;
+      remaining -= Date.now() - started;
+    }
   }
   return null;
 }
@@ -320,13 +385,14 @@ export async function checkForUpdates(customUrl?: string, force = false): Promis
   }
   const sourceUrl = trimmedUrl || undefined;
   const deadline = Date.now() + TOTAL_FETCH_BUDGET;
+  const proxyUrl = vscode.workspace.getConfiguration('http').get<string>('proxy') || '';
 
   // Rates: always try to fetch fresh from API (free, fast, no key needed).
   // This used to be skipped whenever a custom catalog URL was configured,
   // which left custom-hosted catalogs with stale exchange rates.
-  const apiRates = await fetchRatesFromAPI(Math.min(FETCH_TIMEOUT, remainingMs(deadline)));
+  const apiRates = await fetchRatesFromAPI(Math.min(RATES_TIMEOUT, remainingMs(deadline)), proxyUrl);
   if (apiRates) {
-    setCustomRates(apiRates, Date.now());
+    setCustomRates(apiRates, Date.now(), 'remote');
     console.log('[TokenMonitor] Exchange rates updated from API');
   }
 
@@ -341,15 +407,18 @@ export async function checkForUpdates(customUrl?: string, force = false): Promis
       if (Date.now() - stat.mtimeMs < CACHE_TTL && cacheMatchesSource) {
         const catalog = combinedCatalog(cached);
         if (isUsableCatalog(catalog, sourceUrl ? 1 : 3) && applyCatalog(catalog)) {
-          if (!getRatesUpdatedAt() && cached?.rates) { setCustomRates(cached.rates, stat.mtimeMs); }
-          return;
+          if (!hasFetchedRates() && cached?.rates) { setCustomRates(cached.rates, stat.mtimeMs, 'cache'); }
+          // Only trust the cache when it covers exchange rates too. A cache
+          // written before the catalog carried rates would otherwise pin the
+          // display to the built-in table for a full day without ever asking
+          // the network again; falling through lets it heal on the next run.
+          if (hasFetchedRates()) return;
         }
       }
     } catch { /* cache missing */ }
   }
 
   const providerUrls = sourceUrl ? [sourceUrl] : PROVIDER_URLS;
-  const proxyUrl = vscode.workspace.getConfiguration('http').get<string>('proxy') || '';
   let remote: RemotePricing | null = null;
   let source = '';
 
@@ -389,7 +458,7 @@ export async function checkForUpdates(customUrl?: string, force = false): Promis
     if (!isUsableCatalog(catalog, minProviders)) {
       console.warn(`[TokenMonitor] Remote pricing rejected (incomplete): ${source}`);
     } else if (applyCatalog(catalog)) {
-      if (!getRatesUpdatedAt() && remote.rates) { setCustomRates(remote.rates, Date.now()); }
+      if (!hasFetchedRates() && remote.rates) { setCustomRates(remote.rates, Date.now(), 'remote'); }
       console.log(`[TokenMonitor] Model pricing updated: ${source} (${remote.updatedAt || getPricingUpdatedAt() || 'no date'})`);
       try {
         fs.mkdirSync(path.dirname(cacheFile), { recursive: true });
@@ -397,7 +466,11 @@ export async function checkForUpdates(customUrl?: string, force = false): Promis
           schemaVersion: 2,
           updatedAt: remote.updatedAt || new Date().toISOString(),
           providers: remote.providers,
-          rates: remote.rates,
+          // Persist whichever rate table is actually in effect. The OSS catalog
+          // carries no rates, so without this a later offline run has nothing to
+          // restore and the UI can only fall back to the built-in table.
+          rates: apiRates || remote.rates,
+          ratesUpdatedAt: getRatesUpdatedAt(),
           holidays: remote.holidays,
           source,
         };
@@ -410,7 +483,10 @@ export async function checkForUpdates(customUrl?: string, force = false): Promis
   // Fallback: cached data
   try {
     const cached = JSON.parse(fs.readFileSync(cacheFile, 'utf-8'));
-    if (!getRatesUpdatedAt() && cached?.rates) { const stat = fs.statSync(cacheFile); setCustomRates(cached.rates, stat.mtimeMs); }
+    if (!hasFetchedRates() && cached?.rates) {
+      const stat = fs.statSync(cacheFile);
+      setCustomRates(cached.rates, Number(cached?.ratesUpdatedAt) || stat.mtimeMs, 'cache');
+    }
     if (cached?.providers && isUsableCatalog(cached, sourceUrl ? 1 : 3)) {
       applyCatalog(cached);
       console.log('[TokenMonitor] Using cached pricing data');
@@ -418,6 +494,6 @@ export async function checkForUpdates(customUrl?: string, force = false): Promis
     }
   } catch { /* */ }
 
-  if (!getRatesUpdatedAt()) { setCustomRates(DEFAULT_RATES, 1); }
+  if (!hasFetchedRates()) { setCustomRates(DEFAULT_RATES, 1, 'builtin'); }
   console.log('[TokenMonitor] Using bundled pricing (all remote sources unavailable)');
 }

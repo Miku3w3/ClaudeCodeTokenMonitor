@@ -29,6 +29,8 @@ export interface ExtensionConfig {
   budgetWarning: number;
   pollIntervalMs: number;
   pricingUpdateUrl: string;
+  /** Follow the conversation tab on screen instead of the newest transcript. */
+  followActiveTab: boolean;
 }
 
 /** Raw usage data from an assistant message in the JSONL transcript */

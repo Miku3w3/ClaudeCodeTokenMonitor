@@ -1,8 +1,8 @@
 {
   "name": "claude-code-token-monitor",
   "displayName": "Claude Code Token Monitor",
-  "description": "Track Claude Code token usage and cost in real time — per message, per turn and across every session. 11 providers and 178 models with peak/off-peak pricing, subagent breakdown, 11 languages, works offline.",
-  "version": "1.3.0",
+  "description": "Track Claude Code token usage and cost in real time — per message, per turn and across every session. 11 providers and 180 models with peak/off-peak pricing, subagent breakdown, 11 languages, works offline.",
+  "version": "1.3.1",
   "publisher": "miku3w3",
   "icon": "icon.png",
   "license": "MIT",
@@ -205,6 +205,11 @@
           "type": "boolean",
           "default": false,
           "description": "Compact status bar: show only session title + cumulative tokens + cost."
+        },
+        "claudeTokenMonitor.followActiveTab": {
+          "type": "boolean",
+          "default": true,
+          "description": "Follow the Claude Code conversation tab that is currently on screen. Turn this off to always show the session that produced the latest output."
         },
         "claudeTokenMonitor.budgetWarning": {
           "type": "number",

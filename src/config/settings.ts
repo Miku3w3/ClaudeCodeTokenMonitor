@@ -39,5 +39,6 @@ export function getConfig(): ExtensionConfig {
     budgetWarning: cfg.get<number>('budgetWarning', 0),
     pollIntervalMs: cfg.get<number>('pollIntervalMs', 2000),
     pricingUpdateUrl: cfg.get<string>('pricing.updateUrl', ''),
+    followActiveTab: cfg.get<boolean>('followActiveTab', true),
   };
 }
