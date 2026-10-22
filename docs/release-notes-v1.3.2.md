@@ -77,6 +77,16 @@ Hover for input, cache hits, cache misses, output, hit rate, the last message's 
 
 ---
 
+## 🔐 Verification
+
+The exact `.vsix` attached to this release was submitted to VirusTotal:
+
+[VirusTotal report](https://www.virustotal.com/gui/file/8d09c86558080216b5c5881da4045bf51f8d089d963df23da79409ebec5dfa34/detection)
+
+SHA-256: `8d09c86558080216b5c5881da4045bf51f8d089d963df23da79409ebec5dfa34`
+
+---
+
 [Full Changelog](https://github.com/Miku3w3/ClaudeCodeTokenMonitor/blob/master/CHANGELOG.md#132---2026-10-22)
 
 ---
@@ -157,6 +167,16 @@ code --install-extension claude-code-token-monitor-1.3.2.vsix
 | 累计 | 整个会话的 token 与费用 |
 
 悬停可查看输入、缓存命中、缓存未命中、输出、命中率、最后一条消息的费用，以及当前生效的汇率。
+
+---
+
+## 🔐 校验
+
+本 Release 附带的 `.vsix` 已提交 VirusTotal 扫描：
+
+[VirusTotal 报告](https://www.virustotal.com/gui/file/8d09c86558080216b5c5881da4045bf51f8d089d963df23da79409ebec5dfa34/detection)
+
+SHA-256：`8d09c86558080216b5c5881da4045bf51f8d089d963df23da79409ebec5dfa34`
 
 ---
 
