@@ -16,9 +16,9 @@ Reload the window after installing. No API key, no account, no configuration.
 
 ---
 
-## ✨ What's New
+## 🔧 What's Fixed
 
-### 🪟 Follows the conversation on screen
+### 🪟 The status bar follows the conversation on screen again
 
 1.3.0 rewrote the poller and always displayed whichever transcript had been written most recently, so a background session in another window or another project could take over the status bar. It now follows the Claude Code conversation tab that is actually on screen:
 
@@ -29,14 +29,14 @@ Reload the window after installing. No API key, no account, no configuration.
 
 New setting: `claudeTokenMonitor.followActiveTab` (default `true`). Set it to `false` to go back to "newest output wins".
 
-### 💱 Exchange rates that stay honest
+### 💱 Exchange rates load instead of saying "unknown"
 
 - Rates are fetched directly first and retried through `http.proxy`, so a proxied network gets a real rate instead of "unknown".
 - The fetched table and its timestamp are now written to the catalog cache and restored on the next start.
 - The tooltip reports where the rate came from — *just now*, *N minutes ago*, *cached* or *built-in* — and never claims the rate is unknown while a usable table is in effect.
 - A dead endpoint that burned 8 seconds on every refresh was replaced, and the rate phase is capped at 6 seconds.
 
-### 📈 The catalog keeps moving
+### 📈 Daily pricing updates run again
 
 The daily pricing job on the maintainer's server had been exiting before it uploaded anything. It now runs end to end again: **11 providers, 180 models**, refreshed every day and published to Aliyun OSS. Peak/off-peak prices for Bailian and DeepSeek's official API are still resolved per message timestamp.
 
@@ -99,9 +99,9 @@ code --install-extension claude-code-token-monitor-1.3.1.vsix
 
 ---
 
-## ✨ 更新内容
+## 🔧 修复内容
 
-### 🪟 跟着你正在看的会话走
+### 🪟 状态栏重新跟着屏幕上的会话走
 
 1.3.0 重写轮询逻辑后，状态栏总是显示“最后写入”的那个转录，于是别的窗口、别的项目里跑着的会话会把显示抢走。现在重新跟随屏幕上真正打开的 Claude Code 会话标签：
 
@@ -112,7 +112,7 @@ code --install-extension claude-code-token-monitor-1.3.1.vsix
 
 新增设置 `claudeTokenMonitor.followActiveTab`（默认 `true`）。设为 `false` 就回到“谁最后输出就显示谁”。
 
-### 💱 汇率不再糊弄人
+### 💱 汇率不再显示“未知”
 
 - 先直连、失败再走 `http.proxy`，走代理的网络也能拿到真实汇率，不会卡在“未知”。
 - 抓到的汇率和时间戳现在会写进目录缓存，下次启动直接恢复。
