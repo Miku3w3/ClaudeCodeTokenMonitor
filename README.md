@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![VS Code](https://img.shields.io/badge/VS%20Code-%E2%89%A51.90-007ACC)](https://code.visualstudio.com/)
 
-**English** · [简体中文](#简体中文)
+**English** · [简体中文](#zh-cn)
 
 Know what every Claude Code conversation actually costs — in the status bar, per message, per turn, and across every session on your machine.
 
@@ -137,6 +137,8 @@ Pull requests are welcome. Please run `npm test` before opening one.
 
 ---
 
+<a id="zh-cn"></a>
+
 # 简体中文
 
 实时显示 Claude Code 每个会话、每条消息、每一轮的 token 用量与费用。所有数据都在本地从 Claude Code 已经写好的 transcript 文件中读取，不需要 API key，不上传任何数据。
@@ -144,6 +146,14 @@ Pull requests are welcome. Please run `npm test` before opening one.
 ```
 $(pulse) 修复登录Bug | AI耗时 3.2s | 85.0K ¥0.0120 | 累计 1.2M ¥0.1900
 ```
+
+![状态栏](docs/images/statusbar.png)
+
+悬停可查看完整明细，包括当前生效的汇率：
+
+![悬停明细](docs/images/tooltip.png)
+
+---
 
 ## 功能
 
@@ -158,6 +168,8 @@ $(pulse) 修复登录Bug | AI耗时 3.2s | 85.0K ¥0.0120 | 累计 1.2M ¥0.1900
 | **自定义模型** | 命令面板引导添加私有部署或新模型，无需手写 JSON |
 | **11 种语言 · 7 种货币** | en / zh-CN / zh-TW / ja / ko / es / ar / pt / de / fr / ru · CNY / USD / EUR / JPY / KRW / GBP / 自动 |
 | **预算提醒** | 累计费用超过设定阈值时提醒 |
+
+![Token Monitor 看板](docs/images/dashboard.png)
 
 ## 快速开始
 
