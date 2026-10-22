@@ -42,7 +42,7 @@ const RATE_API_URLS = [
  */
 const RATES_TIMEOUT = 6000;
 
-const REPO = 'Miku3w3/ClaudeCodeUsage';
+const REPO = 'Miku3w3/ClaudeCodeTokenMonitor';
 const RAW = `https://raw.githubusercontent.com/${REPO}/master/pricing.json`;
 
 /** Catalog published by the server job through Aliyun OSS (no filing, no proxy). */

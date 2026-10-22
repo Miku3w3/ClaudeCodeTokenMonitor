@@ -87,7 +87,7 @@ tag 必须带 `v` 前缀,且与 `package.json` 版本完全一致。**tag 只是
 
 ## 5. 在网页上创建 GitHub Release
 
-1. 打开 <https://github.com/Miku3w3/ClaudeCodeUsage/releases/new>
+1. 打开 <https://github.com/Miku3w3/ClaudeCodeTokenMonitor/releases/new>
 2. **Choose a tag** → 选刚推的 `v<version>`
 3. **Release title** → 用英文卖点格式:
    ```
@@ -119,7 +119,7 @@ npx vsce publish --packagePath archive/claude-code-token-monitor-<version>.vsix
 
 ## 7. 发布后核对
 
-- [ ] <https://github.com/Miku3w3/ClaudeCodeUsage/releases> 里新版本在、vsix 能下载
+- [ ] <https://github.com/Miku3w3/ClaudeCodeTokenMonitor/releases> 里新版本在、vsix 能下载
 - [ ] <https://marketplace.visualstudio.com/items?itemName=Miku3w3.claude-code-token-monitor> 版本号已更新
 - [ ] Marketplace 页面上的 README 渲染正常(图片不挂、表格不错位)
 - [ ] 本机已装同版本 vsix 并手测过

@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.2] - 2026-10-22
+
+### Changed
+
+- Repository renamed from `Miku3w3/ClaudeCodeUsage` to `Miku3w3/ClaudeCodeTokenMonitor`; the pricing mirror URLs, package metadata and documentation links follow the new name.
+- The Chinese README section now carries the same three screenshots as the English one, and its table-of-contents link uses an ASCII anchor (`#zh-cn`). The Marketplace strips CJK characters when generating heading IDs, so `#简体中文` never matched anything there.
+
+---
+
 ## [1.3.1] - 2026-10-22
 
 ### Fixed
@@ -196,11 +205,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-[1.3.0]: https://github.com/Miku3w3/ClaudeCodeUsage/compare/v1.2.1...v1.3.0
-[1.2.1]: https://github.com/Miku3w3/ClaudeCodeUsage/compare/v1.2.0...v1.2.1
-[1.2.0]: https://github.com/Miku3w3/ClaudeCodeUsage/compare/v1.1.2...v1.2.0
-[1.1.2]: https://github.com/Miku3w3/ClaudeCodeUsage/compare/v1.1.1...v1.1.2
-[1.1.1]: https://github.com/Miku3w3/ClaudeCodeUsage/compare/v1.1.0...v1.1.1
-[1.1.0]: https://github.com/Miku3w3/ClaudeCodeUsage/compare/v1.0.6...v1.1.0
-[1.0.6]: https://github.com/Miku3w3/ClaudeCodeUsage/compare/v1.0.0...v1.0.6
-[1.0.0]: https://github.com/Miku3w3/ClaudeCodeUsage/compare/v0.12.1...v1.0.0
+[1.3.0]: https://github.com/Miku3w3/ClaudeCodeTokenMonitor/compare/v1.2.1...v1.3.0
+[1.2.1]: https://github.com/Miku3w3/ClaudeCodeTokenMonitor/compare/v1.2.0...v1.2.1
+[1.2.0]: https://github.com/Miku3w3/ClaudeCodeTokenMonitor/compare/v1.1.2...v1.2.0
+[1.1.2]: https://github.com/Miku3w3/ClaudeCodeTokenMonitor/compare/v1.1.1...v1.1.2
+[1.1.1]: https://github.com/Miku3w3/ClaudeCodeTokenMonitor/compare/v1.1.0...v1.1.1
+[1.1.0]: https://github.com/Miku3w3/ClaudeCodeTokenMonitor/compare/v1.0.6...v1.1.0
+[1.0.6]: https://github.com/Miku3w3/ClaudeCodeTokenMonitor/compare/v1.0.0...v1.0.6
+[1.0.0]: https://github.com/Miku3w3/ClaudeCodeTokenMonitor/compare/v0.12.1...v1.0.0

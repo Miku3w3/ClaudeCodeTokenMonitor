@@ -77,7 +77,7 @@ Hover for input, cache hits, cache misses, output, hit rate, the last message's 
 
 ---
 
-[Full Changelog](https://github.com/Miku3w3/ClaudeCodeUsage/blob/master/CHANGELOG.md#131---2026-10-22)
+[Full Changelog](https://github.com/Miku3w3/ClaudeCodeTokenMonitor/blob/master/CHANGELOG.md#131---2026-10-22)
 
 ---
 
@@ -160,4 +160,4 @@ code --install-extension claude-code-token-monitor-1.3.1.vsix
 
 ---
 
-[完整更新日志](https://github.com/Miku3w3/ClaudeCodeUsage/blob/master/CHANGELOG.md#131---2026-10-22)
+[完整更新日志](https://github.com/Miku3w3/ClaudeCodeTokenMonitor/blob/master/CHANGELOG.md#131---2026-10-22)

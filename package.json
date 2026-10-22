@@ -2,17 +2,17 @@
   "name": "claude-code-token-monitor",
   "displayName": "Claude Code Token Monitor",
   "description": "Track Claude Code token usage and cost in real time — per message, per turn and across every session. 11 providers and 180 models with peak/off-peak pricing, subagent breakdown, 11 languages, works offline.",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "publisher": "miku3w3",
   "icon": "icon.png",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Miku3w3/ClaudeCodeUsage"
+    "url": "https://github.com/Miku3w3/ClaudeCodeTokenMonitor"
   },
-  "homepage": "https://github.com/Miku3w3/ClaudeCodeUsage#readme",
+  "homepage": "https://github.com/Miku3w3/ClaudeCodeTokenMonitor#readme",
   "bugs": {
-    "url": "https://github.com/Miku3w3/ClaudeCodeUsage/issues"
+    "url": "https://github.com/Miku3w3/ClaudeCodeTokenMonitor/issues"
   },
   "keywords": [
     "claude code",

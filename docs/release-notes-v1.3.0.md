@@ -87,7 +87,7 @@ Hover the item for the full breakdown: input, cache hits, cache misses, output, 
 
 ---
 
-[Full Changelog](https://github.com/Miku3w3/ClaudeCodeUsage/blob/master/changelog.md#130---2026-10-21)
+[Full Changelog](https://github.com/Miku3w3/ClaudeCodeTokenMonitor/blob/master/changelog.md#130---2026-10-21)
 
 ---
 
@@ -180,4 +180,4 @@ code --install-extension claude-code-token-monitor-1.3.0.vsix
 
 ---
 
-[完整更新日志](https://github.com/Miku3w3/ClaudeCodeUsage/blob/master/changelog.md#130---2026-10-21)
+[完整更新日志](https://github.com/Miku3w3/ClaudeCodeTokenMonitor/blob/master/changelog.md#130---2026-10-21)
