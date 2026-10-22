@@ -137,7 +137,7 @@ Pull requests are welcome. Please run `npm test` before opening one.
 
 ---
 
-<a id="zh-cn"></a>
+<a id="zh-cn" name="zh-cn"></a>
 
 # 简体中文
 
