@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.3] - 2026-10-23
+
+### Changed
+
+- README version badge corrected — the 1.3.2 package still shipped a `v1.3.1` badge — and a Snyk dependency-scan badge added.
+- No functional changes since 1.3.2.
+
+---
+
 ## [1.3.2] - 2026-10-22
 
 ### Changed
@@ -205,6 +214,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+[1.3.3]: https://github.com/Miku3w3/ClaudeCodeTokenMonitor/compare/v1.3.2...v1.3.3
+[1.3.2]: https://github.com/Miku3w3/ClaudeCodeTokenMonitor/compare/v1.3.1...v1.3.2
+[1.3.1]: https://github.com/Miku3w3/ClaudeCodeTokenMonitor/compare/v1.3.0...v1.3.1
 [1.3.0]: https://github.com/Miku3w3/ClaudeCodeTokenMonitor/compare/v1.2.1...v1.3.0
 [1.2.1]: https://github.com/Miku3w3/ClaudeCodeTokenMonitor/compare/v1.2.0...v1.2.1
 [1.2.0]: https://github.com/Miku3w3/ClaudeCodeTokenMonitor/compare/v1.1.2...v1.2.0
