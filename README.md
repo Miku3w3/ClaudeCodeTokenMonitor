@@ -1,8 +1,9 @@
 # Claude Code Token Monitor
 
-[![Marketplace](https://img.shields.io/badge/VS%20Marketplace-v1.3.1-007ACC?logo=visualstudiocode&logoColor=white)](https://marketplace.visualstudio.com/items?itemName=miku3w3.claude-code-token-monitor)
+[![Marketplace](https://img.shields.io/badge/VS%20Marketplace-v1.3.2-007ACC?logo=visualstudiocode&logoColor=white)](https://marketplace.visualstudio.com/items?itemName=miku3w3.claude-code-token-monitor)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 [![VS Code](https://img.shields.io/badge/VS%20Code-%E2%89%A51.90-007ACC)](https://code.visualstudio.com/)
+[![Snyk security](https://snyk.io/test/github/Miku3w3/ClaudeCodeTokenMonitor/badge.svg)](https://snyk.io/test/github/Miku3w3/ClaudeCodeTokenMonitor)
 
 **English** · [简体中文](#zh-cn)
 
