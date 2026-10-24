@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.4] - 2026-10-24
+
+### Fixed
+
+- The status bar stopped following a conversation whose tab title Claude Code truncates: it cuts the title at 24 characters, right where two pasted paths still read the same (`"C:\Users\Administrator\…` fits both `…\Desktop\MC` and `…\Desktop\SSH实验.pdf`). The label matched two sessions, the extension refused to guess, and the status bar stayed on whatever session was shown before — switching to that tab showed another session's numbers. A shared truncated label now resolves by position first, then by which session is running, then by freshness in this window; it no longer leaves the status bar on the previous conversation.
+- Every tab resolution is now appended to `~/.claude/token-monitor/follow-log.jsonl` (trimmed to the last 300 lines) so a "wrong conversation" report can be checked against what actually happened.
+
+---
+
 ## [1.3.3] - 2026-10-23
 
 ### Changed

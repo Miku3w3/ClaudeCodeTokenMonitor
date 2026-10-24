@@ -203,9 +203,10 @@ function closest(candidates: FollowCandidate[], indexOf: (c: FollowCandidate) =>
  * likely it is the tab the user is looking at. Ties inside that group fall back
  * to workspace, running state and freshness.
  *
- * A truncated label ("Fix the auth…") is accepted when it is a prefix of
- * exactly one title. A fresh-conversation label binds to the only untitled live
- * session when there is exactly one, and otherwise means idle.
+ * A truncated label ("Fix the auth…") resolves to a running session whose
+ * title starts with it, and only falls back to "exactly one such title" when
+ * no session is running. A fresh-conversation label binds to the only untitled
+ * live session when there is exactly one, and otherwise means idle.
  */
 export function pickSessionForTab(
   label: string,
@@ -224,12 +225,35 @@ export function pickSessionForTab(
   // VS Code truncates long tab labels with "…" (or "..."). Several sessions can
   // start with the same words (people paste the same path into more than one
   // conversation), so the most recent use of the prefix wins, exactly like an
-  // exact label. Only a tie is left unresolved.
+  // exact label.
+  //
+  // Position stays the primary signal on purpose: opening a conversation tab
+  // starts its Claude Code process, so at the instant of the switch the session
+  // on screen may have no session file yet and look "not running". Only a tie —
+  // two sessions claiming the prefix at the same position — falls back to
+  // whether the session is running, which is the one thing the ellipsis cannot
+  // hide: Claude Code cuts the tab title at 24 characters, and
+  // `"C:\Users\Administrator\…` fits both `…\Desktop\MC` and `…\Desktop\SSH
+  // 实验.pdf`. Without that tie-break the label looks ambiguous, nothing is
+  // picked, and the status bar stays pinned to whatever was shown before.
   const stem = target.replace(/(?:…|\.\.\.)$/u, '').trim();
   if (stem && stem !== target) {
     const prefixed = closest(candidates, c => prefixIndex(c, stem));
     if (prefixed.length === 1) {
       return { kind: 'match', session: prefixed[0] };
+    }
+    const running = prefixed.filter(c => c.live);
+    if (running.length === 1) {
+      return { kind: 'match', session: running[0] };
+    }
+    // Nothing is running — the switch happened before Claude Code finished
+    // starting the session on screen — or several sessions are. Freshness in
+    // this window is the only signal left, and guessing beats staying pinned to
+    // the previous session: a wrong guess self-corrects on the next poll, a
+    // stuck status bar shows another conversation's numbers indefinitely.
+    const pool = running.length > 0 ? running : prefixed;
+    if (pool.length > 0) {
+      return { kind: 'match', session: best(pool, workspaceRoots, true) };
     }
   }
 

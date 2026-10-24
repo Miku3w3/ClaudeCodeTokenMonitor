@@ -138,11 +138,99 @@ test('matches a tab label VS Code truncated with an ellipsis', () => {
   assert.equal(result.session.sessionId, 'long');
 });
 
-test('does not guess when a truncated label matches several sessions', () => {
+test('does not guess when a truncated label matches nothing', () => {
   const a = candidate({ sessionId: 'a', title: 'Pricing update part one' });
-  const b = candidate({ sessionId: 'b', title: 'Pricing update part two' });
+  const b = candidate({ sessionId: 'b', title: 'Deploy notes for production' });
   const result = pickSessionForTab('Pricing update…', [a, b], WS);
-  assert.equal(result.kind, 'none');
+  assert.equal(result.kind, 'match');
+  assert.equal(result.session.sessionId, 'a');
+
+  const miss = pickSessionForTab('Something entirely different…', [a, b], WS);
+  assert.equal(miss.kind, 'none');
+});
+
+test('a truncated label ignores a stale session that only starts with the same words', () => {
+  // Real case: Claude Code cuts the tab title at 24 characters, so a pasted
+  // path stops right where two conversations stop looking alike —
+  // `"C:\Users\Administrator\…` fits both. Only one of them is running; the
+  // other is a months-old index entry and must not make the label ambiguous.
+  const stale = candidate({
+    sessionId: 'stale',
+    title: '"C:\\Users\\Administrator\\Desktop\\MC"帮我看看有没有问题',
+  });
+  const mine = candidate({
+    sessionId: 'mine',
+    title: '"C:\\Users\\Administrator\\Desktop\\SSH实验.pdf" 我现在有一门实验',
+    live: true,
+    lastUpdatedAt: 500,
+  });
+  const result = pickSessionForTab('"C:\\Users\\Administrator\\…', [stale, mine], WS);
+  assert.equal(result.kind, 'match');
+  assert.equal(result.session.sessionId, 'mine');
+});
+
+test('a truncated label resolves to the session that used those words most recently', () => {
+  // Real case: a path was pasted into two conversations, so both transcripts
+  // start with the same words. The tab belongs to the session where that
+  // message is the newest one, not the one where it is an older message.
+  const mine = candidate({
+    sessionId: 'mine',
+    title: '"D:\\Jobs\\html\\ASP.NET Core Web\\MyBookStore" check this',
+  });
+  const other = candidate({
+    sessionId: 'other',
+    title: '如果中夹英怎么办？',
+    altTitles: ['那这个skill是自动识别视频有没有声音', '"D:\\Jobs\\html\\ASP.NET Core Web\\Test"'],
+  });
+  const result = pickSessionForTab('"D:\\Jobs\\html\\ASP.NET Co…', [other, mine], WS);
+  assert.equal(result.kind, 'match');
+  assert.equal(result.session.sessionId, 'mine');
+});
+
+test('position beats running state — a tab opens its process lazily', () => {
+  // Real case: switching to a conversation tab starts its Claude Code process,
+  // so at the instant of the switch the session on screen has no session file
+  // and looks dead, while an old conversation that happens to contain the same
+  // path eighty messages back looks alive. Position decides; only a tie at the
+  // same position falls back to running state.
+  const mine = candidate({
+    sessionId: 'mine',
+    title: '"C:\\Users\\Administrator\\Desktop\\SSH实验.pdf" 我现在有一门实验',
+    live: false,
+  });
+  const other = candidate({
+    sessionId: 'other',
+    title: '首次从这个对话切换过去',
+    altTitles: [
+      '后来切多几次都可以',
+      '还有没有别的问题？',
+      '"C:\\Users\\Administrator\\Desktop\\屏幕截图.png" 帮我看一下',
+    ],
+    live: true,
+    lastUpdatedAt: 9999,
+  });
+  const result = pickSessionForTab('"C:\\Users\\Administrator\\…', [other, mine], WS);
+  assert.equal(result.kind, 'match');
+  assert.equal(result.session.sessionId, 'mine');
+});
+
+test('two running sessions sharing a truncated label fall back to the freshest', () => {
+  const older = candidate({ sessionId: 'older', title: 'Deploy notes for staging', live: true, lastUpdatedAt: 100 });
+  const newer = candidate({ sessionId: 'newer', title: 'Deploy notes for production', live: true, lastUpdatedAt: 900 });
+  const result = pickSessionForTab('Deploy notes fo…', [older, newer], WS);
+  assert.equal(result.kind, 'match');
+  assert.equal(result.session.sessionId, 'newer');
+});
+
+test('stale sessions sharing a truncated label fall back to the freshest in this window', () => {
+  // Neither session has a process yet — the tab was opened a heartbeat ago and
+  // Claude Code is still starting it. Freshness is the only signal left, and a
+  // guess that self-corrects beats a status bar stuck on the previous session.
+  const older = candidate({ sessionId: 'older', title: 'Pricing update part one', live: false, lastUpdatedAt: 100 });
+  const newer = candidate({ sessionId: 'newer', title: 'Pricing update part two', live: false, lastUpdatedAt: 900 });
+  const result = pickSessionForTab('Pricing update…', [older, newer], WS);
+  assert.equal(result.kind, 'match');
+  assert.equal(result.session.sessionId, 'newer');
 });
 
 test('a truncated label resolves to the session that used those words most recently', () => {

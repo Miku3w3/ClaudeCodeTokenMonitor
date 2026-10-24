@@ -15,7 +15,7 @@ import { replayTranscriptLines, type TranscriptSource } from './core/replay';
 import { buildAgentStats, recentMessages } from './core/agentView';
 import {
   pickSessionForTab, pickNewestSession, cleanTabLabel, normalizeTitle, transcriptLabel,
-  type FollowCandidate,
+  type FollowCandidate, type TabMatch,
 } from './core/sessionFollow';
 import { claudeDir, tokenMonitorDir, tokenTrackerDir, transcriptPath as getTranscriptPath } from './utils/paths';
 import type { Currency, PerMessageStats, SessionPidFile, ClaudeReadableData, TimeRange, AggregatedData, SessionIndexEntry, ModelStatEntry } from './model/types';
@@ -339,11 +339,43 @@ function onActiveTabChanged(): void {
   applyTabLabel(label, 0);
 }
 
+/**
+ * Append what each tab switch resolved to.
+ *
+ * "The status bar follows the wrong conversation" is invisible from the
+ * outside: the only state that survives is the session that ended up on
+ * screen, so a label that resolved to the wrong session looks exactly like one
+ * that resolved correctly. This keeps the last few hundred resolutions in
+ * `~/.claude/token-monitor/follow-log.jsonl` so the next report can be checked
+ * against what actually happened instead of re-derived from scratch.
+ */
+function logFollow(label: string, match: TabMatch, attempt: number, usedDeep = false): void {
+  try {
+    const line = JSON.stringify({
+      ts: new Date().toISOString(),
+      attempt,
+      deep: usedDeep,
+      label,
+      kind: match.kind,
+      sessionId: match.kind === 'match' ? match.session.sessionId : null,
+      live: match.kind === 'match' ? !!match.session.live : null,
+    });
+    fs.mkdirSync(tokenMonitorDir(), { recursive: true });
+    const file = path.join(tokenMonitorDir(), 'follow-log.jsonl');
+    fs.appendFileSync(file, line + '\n', 'utf-8');
+    if (fs.statSync(file).size > 96 * 1024) {
+      const kept = fs.readFileSync(file, 'utf-8').trim().split('\n').slice(-300);
+      fs.writeFileSync(file, kept.join('\n') + '\n', 'utf-8');
+    }
+  } catch { /* diagnostics must never break following */ }
+}
+
 function applyTabLabel(label: string, attempt: number): void {
   if (followRetryTimer) { clearTimeout(followRetryTimer); followRetryTimer = null; }
 
   const roots = workspaceRoots();
   let match = pickSessionForTab(label, collectFollowCandidates(), roots);
+  let usedDeep = false;
 
   // A tab keeps the name it was given, so its label can be older than the
   // recent window — and long tool outputs push it megabytes back. Only on a
@@ -353,14 +385,23 @@ function applyTabLabel(label: string, attempt: number): void {
     const live = scanSessions();
     if (live.length > 0) {
       const deepMatch = pickSessionForTab(label, collectFollowCandidates(live, true), roots);
-      if (deepMatch.kind !== 'none') match = deepMatch;
+      if (deepMatch.kind !== 'none') { match = deepMatch; usedDeep = true; }
     }
   }
+
+  logFollow(label, match, attempt, usedDeep);
 
   if (match.kind === 'match') {
     tabIdle = false;
     tabSessionOverride = { sessionId: match.session.sessionId, cwd: match.session.cwd };
     poll();
+    // Focusing a conversation tab starts its Claude Code process, so for about a
+    // second the conversation on screen has no session file and can be missing
+    // from the candidate list entirely. A binding that needed the deep scan, or
+    // that landed on a session with no process, is therefore only a stand-in —
+    // look again once the real session has registered rather than leaving the
+    // status bar on the wrong conversation until the next switch.
+    if (usedDeep || !match.session.live) scheduleFollowRetry(label, attempt, 2);
     return;
   }
 
