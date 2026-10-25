@@ -10,6 +10,8 @@ const {
   normalizeTitle,
   cleanTabLabel,
   transcriptLabel,
+  mayCarryLabel,
+  orderSessionLabels,
 } = require('../out/core/sessionFollow.js');
 
 const WS = ['D:\\Jobs\\claude-code\\vscode-claude-token-monitor'];
@@ -322,6 +324,61 @@ test('reads an ai-title line', () => {
     transcriptLabel({ type: 'ai-title', aiTitle: 'Fix the auth bug' }),
     { kind: 'ai-title', text: 'Fix the auth bug' },
   );
+});
+
+test('reads the custom-title line a title hook writes', () => {
+  assert.deepEqual(
+    transcriptLabel({ type: 'custom-title', customTitle: 'OpenList加固与标题同步修复' }),
+    { kind: 'title', text: 'OpenList加固与标题同步修复' },
+  );
+});
+
+test('reads the agent-name line that follows a custom-title', () => {
+  assert.deepEqual(
+    transcriptLabel({ type: 'agent-name', agentName: '排查OJ服务器时限与自启动' }),
+    { kind: 'title', text: '排查OJ服务器时限与自启动' },
+  );
+});
+
+test('a title line is recognised whether or not it is pretty-printed', () => {
+  // Claude Code writes compact JSON; the Python title hook's JSON has a space
+  // after the colon. Both must survive the pre-filter.
+  assert.equal(mayCarryLabel('{"type":"custom-title","customTitle":"x"}'), true);
+  assert.equal(mayCarryLabel('{"type": "custom-title", "customTitle": "x"}'), true);
+  assert.equal(mayCarryLabel('{"type":"agent-name","agentName":"x"}'), true);
+  assert.equal(mayCarryLabel('{"type":"user","message":{"role":"user"}}'), true);
+  assert.equal(mayCarryLabel('{"type":"assistant","message":{"role":"assistant"}}'), false);
+  assert.equal(mayCarryLabel('{"type":"tool_result","content":"big output"}'), false);
+});
+
+test('generated titles come before ai-title and user messages', () => {
+  const labels = orderSessionLabels(
+    ['新标题', '旧标题', '新标题'],
+    'AI title',
+    ['用户这句话', '旧标题', '新标题'],
+  );
+  assert.deepEqual(labels, ['新标题', '旧标题', 'AI title', '用户这句话']);
+});
+
+test('label ordering drops empty text and caps each label at 200 characters', () => {
+  const long = 'x'.repeat(240);
+  assert.deepEqual(orderSessionLabels(['', long], '', []), [long.slice(0, 200)]);
+});
+
+test('a retired generated title loses to the session that still uses it', () => {
+  // The tab label is the conversation's current title, not any title it ever
+  // had. Both sessions match, but the one whose newest label it is wins.
+  const retired = candidate({
+    sessionId: 'retired',
+    title: '新标题',
+    altTitles: ['旧标题'],
+    lastUpdatedAt: 9_999_999,
+    live: true,
+  });
+  const current = candidate({ sessionId: 'current', title: '旧标题', lastUpdatedAt: 1 });
+  const result = pickSessionForTab('旧标题', [retired, current], WS);
+  assert.equal(result.kind, 'match');
+  assert.equal(result.session.sessionId, 'current');
 });
 
 test('reads a plain user message and collapses whitespace', () => {

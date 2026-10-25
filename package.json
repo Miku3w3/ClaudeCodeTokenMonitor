@@ -2,7 +2,7 @@
   "name": "claude-code-token-monitor",
   "displayName": "Claude Code Token Monitor",
   "description": "Track Claude Code token usage and cost in real time — per message, per turn and across every session. 11 providers and 180 models with peak/off-peak pricing, subagent breakdown, 11 languages, works offline.",
-  "version": "1.3.4",
+  "version": "1.3.5",
   "publisher": "miku3w3",
   "icon": "icon.png",
   "license": "MIT",

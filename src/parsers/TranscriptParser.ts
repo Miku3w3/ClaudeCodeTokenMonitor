@@ -113,6 +113,22 @@ export function parseLine(lineJson: string): ParsedEvent | null {
     };
   }
 
+  // --- Conversation title written by a UserPromptSubmit hook ---
+  // Claude Code stores a hook-provided `sessionTitle` as a `custom-title` line
+  // followed by an `agent-name` line. Both are title events: the status bar
+  // shows the conversation's title, and the title changes at checkpoints in the
+  // middle of a session, not only when the session changes.
+  if (type === 'custom-title' || type === 'agent-name') {
+    return {
+      type: 'ai-title',
+      timestamp: obj.timestamp || new Date().toISOString(),
+      uuid: '',
+      sessionId: obj.sessionId || '',
+      isRealUserMessage: false,
+      title: obj.customTitle || obj.agentName || '',
+    };
+  }
+
   // --- AI-generated conversation title ---
   if (type === 'ai-title') {
     return {

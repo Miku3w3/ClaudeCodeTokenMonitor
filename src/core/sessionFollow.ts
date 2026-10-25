@@ -3,8 +3,9 @@
  *
  * The status bar should show the conversation that is actually on screen, not
  * whichever transcript wrote last. VS Code hands us the active editor tab, and
- * the Claude Code panel titles each conversation tab with its `ai-title`, so
- * the tab label is matched against session titles.
+ * the Claude Code panel titles each conversation tab with the conversation's
+ * generated title — or, when no title has been generated yet, the latest
+ * message the user typed. The tab label is matched against both.
  *
  * Ties are broken by, in order: a session inside this window's workspace, a
  * running session, the freshest transcript.
@@ -42,13 +43,33 @@ const NON_USER_TEXT = /^(\[Request interrupted|\[Request cancelled|<system-remin
 /**
  * The label Claude Code displays for a session.
  *
- * Current CLI builds do not write `ai-title` lines at all: the tab shows the
- * latest message the user actually typed. Older builds wrote `ai-title`, and
- * then the newest one wins. Parsing both shapes keeps tab following working
- * across CLI versions.
+ * Claude Code's title priority is `agentName || customTitle || aiTitle ||
+ * firstPrompt`, and it stores a hook-provided `sessionTitle` as a `custom-title`
+ * line followed by an `agent-name` line. The title script returns one on every
+ * checkpoint, so on current builds the tab shows the newest generated title and
+ * user messages never reach the tab at all. Older builds wrote `ai-title`; a
+ * session with no generated title falls back to the latest message the user
+ * actually typed. The backward scan in `getSessionLabels` sees the agent-name
+ * line first because it is written right after the custom-title line.
  */
-export function transcriptLabel(obj: any): { kind: 'ai-title' | 'user'; text: string } | null {
+export function transcriptLabel(obj: any): { kind: 'ai-title' | 'title' | 'user'; text: string } | null {
   if (!obj || typeof obj !== 'object') return null;
+
+  if (obj.type === 'custom-title') {
+    const title = obj.customTitle || obj.title;
+    if (typeof title === 'string' && title.trim()) {
+      return { kind: 'title', text: title.trim() };
+    }
+    return null;
+  }
+
+  if (obj.type === 'agent-name') {
+    const title = obj.agentName || obj.name;
+    if (typeof title === 'string' && title.trim()) {
+      return { kind: 'title', text: title.trim() };
+    }
+    return null;
+  }
 
   if (obj.type === 'ai-title') {
     const title = obj.aiTitle || obj.title;
@@ -74,6 +95,45 @@ export function transcriptLabel(obj: any): { kind: 'ai-title' | 'user'; text: st
   text = text.replace(/\s+/g, ' ').trim();
   if (!text || NON_USER_TEXT.test(text)) return null;
   return { kind: 'user', text };
+}
+
+/**
+ * Cheap pre-`JSON.parse` filter for transcript lines that can carry a label.
+ *
+ * Matching on the value instead of on `"type":` matters: Claude Code writes
+ * compact lines, but a Python hook's JSON keeps a space after the colon
+ * (`{"type": "custom-title", ...}`).
+ */
+export function mayCarryLabel(line: string): boolean {
+  return (
+    line.indexOf('"type":"user"') >= 0
+    || line.indexOf('"type": "user"') >= 0
+    || line.indexOf('"custom-title"') >= 0
+    || line.indexOf('"agent-name"') >= 0
+    || line.indexOf('"ai-title"') >= 0
+  );
+}
+
+/**
+ * Assemble a session's labels in the order a tab label is matched against them.
+ *
+ * Generated titles come first because they are what the tab shows; the newest
+ * one is the current label and the older ones stay matchable for a tab that has
+ * not repainted yet. A user message is only a tab label when the session has no
+ * generated title at all, so it comes last.
+ */
+export function orderSessionLabels(
+  titles: string[],
+  aiTitle: string,
+  userTexts: string[],
+): string[] {
+  const labels: string[] = [];
+  for (const raw of [...titles, aiTitle, ...userTexts]) {
+    if (!raw) continue;
+    const text = raw.length > 200 ? raw.slice(0, 200) : raw;
+    if (!labels.includes(text)) labels.push(text);
+  }
+  return labels;
 }
 
 export type TabMatch =

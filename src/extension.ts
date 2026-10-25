@@ -15,6 +15,7 @@ import { replayTranscriptLines, type TranscriptSource } from './core/replay';
 import { buildAgentStats, recentMessages } from './core/agentView';
 import {
   pickSessionForTab, pickNewestSession, cleanTabLabel, normalizeTitle, transcriptLabel,
+  mayCarryLabel, orderSessionLabels,
   type FollowCandidate, type TabMatch,
 } from './core/sessionFollow';
 import { claudeDir, tokenMonitorDir, tokenTrackerDir, transcriptPath as getTranscriptPath } from './utils/paths';
@@ -131,19 +132,22 @@ function scanSessions(): Array<{ pid: number; sessionId: string; cwd: string; st
  * scan runs only when the active tab's label did not match anything.
  */
 const LABEL_SCAN = {
-  shallow: { chunks: 64, labels: 12 },
-  deep: { chunks: 512, labels: 200 },
+  shallow: { chunks: 64, labels: 12, titles: 8 },
+  deep: { chunks: 512, labels: 200, titles: 24 },
 };
 
 /**
  * The labels Claude Code may show on this session's conversation tab: the
- * newest `ai-title` when the transcript has one, then the newest messages the
+ * newest generated title, the titles it replaced, then the newest messages the
  * user actually typed.
  *
- * Current CLI builds write no `ai-title` at all — the tab shows a user message
- * — which is why matching on the indexed first-message title never finds the
- * tab. Several recent labels are returned because a tab keeps the name it was
- * given; after a few more messages its label is no longer the newest one.
+ * Claude Code titles a tab with `agentName || customTitle || aiTitle ||
+ * firstPrompt`. The title hook writes a `custom-title` + `agent-name` pair at
+ * each checkpoint, so a session that has a title never shows a user message on
+ * its tab — scanning only for `user` lines made every generated title resolve
+ * to no session at all. The older titles stay in the list because they are also
+ * what the tab showed a checkpoint ago, and because a title can be reused by
+ * another session, where the newer use must win.
  */
 function getSessionLabels(s: { cwd: string; sessionId: string }, deep = false): string[] {
   const tp = path.join(claudeDir(), 'projects', encodeProjectPath(s.cwd), s.sessionId + '.jsonl');
@@ -156,7 +160,9 @@ function getSessionLabels(s: { cwd: string; sessionId: string }, deep = false): 
 
   const limits = deep ? LABEL_SCAN.deep : LABEL_SCAN.shallow;
   const userTexts: string[] = [];
+  const titles: string[] = [];
   let aiTitle = '';
+  let chunksWithoutTitle = 0;
   try {
     // Read backwards in 64KB chunks. Scanning stops as soon as enough recent
     // user messages are found, so quiet sessions cost one chunk. This only
@@ -177,11 +183,15 @@ function getSessionLabels(s: { cwd: string; sessionId: string }, deep = false): 
         // Almost every line is assistant output or a tool result; skip those
         // before paying for JSON.parse.
         const line = lines[i];
-        if (line.indexOf('"type":"user"') < 0 && line.indexOf('"type":"ai-title"') < 0) continue;
+        if (!mayCarryLabel(line)) continue;
         let obj: any;
         try { obj = JSON.parse(line); } catch { continue; }
         const label = transcriptLabel(obj);
         if (!label) continue;
+        if (label.kind === 'title') {
+          if (titles.length < limits.titles && !titles.includes(label.text)) titles.push(label.text);
+          continue;
+        }
         if (label.kind === 'ai-title') {
           if (!aiTitle) aiTitle = label.text;
           continue;
@@ -191,16 +201,17 @@ function getSessionLabels(s: { cwd: string; sessionId: string }, deep = false): 
 
       if (start === 0) break;
       end = start;
-      if (userTexts.length >= limits.labels) break;
+      // User messages are the bulk of a transcript; stop once the recent window
+      // is full. A session's last checkpoint can sit behind a large tool output,
+      // so keep looking for a generated title for a few more chunks — but never
+      // let an untitled session turn the shallow scan into a full-file read.
+      if (userTexts.length >= limits.labels) {
+        if (titles.length > 0 || aiTitle || ++chunksWithoutTitle >= 8) break;
+      }
     }
   } catch { /* file vanished while reading */ }
 
-  const labels: string[] = [];
-  for (const raw of [aiTitle, ...userTexts]) {
-    if (!raw) continue;
-    const text = raw.length > 200 ? raw.slice(0, 200) : raw;
-    if (!labels.includes(text)) labels.push(text);
-  }
+  const labels = orderSessionLabels(titles, aiTitle, userTexts);
   sessionTitleCache.set(cacheKey, { labels, mtimeMs: stat.mtimeMs, size: stat.size });
   return labels;
 }
@@ -542,7 +553,13 @@ function processEvent(
     currentTitle = event.title;
     let mtimeMs = -1, size = -1;
     try { const st = fs.statSync(lastTranscriptPath); mtimeMs = st.mtimeMs; size = st.size; } catch { /* */ }
-    sessionTitleCache.set(currentSessionId, { labels: [event.title], mtimeMs, size });
+    // Keep the labels already scanned: the tab may still be showing a title
+    // from a previous checkpoint, and an untitled tab falls back to user text.
+    const previous = sessionTitleCache.get(currentSessionId);
+    const labels = previous && previous.labels.includes(event.title)
+      ? previous.labels
+      : [event.title, ...(previous?.labels || [])];
+    sessionTitleCache.set(currentSessionId, { labels, mtimeMs, size });
     return true;
   }
 

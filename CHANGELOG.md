@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.3.5] - 2026-10-25
+
+### Fixed
+
+- **The status bar stopped following conversations whose tab title is generated.** Once every session got an AI-written title, every tab switch broke: the title hook stores the title as `custom-title` and `agent-name` lines in the transcript, Claude Code shows that title on the tab, and the extension scanned only `user` and `ai-title` lines. The generated title matched no session, the tab resolved to `none`, and the status bar deliberately keeps the previous session on `none` — so every switch showed another conversation's numbers. Generated titles are now follow labels: the newest one first, older ones kept as alternates (a title is re-generated at checkpoints and a tab may still show the previous one), then `ai-title`, then user messages.
+- The status bar's own title now updates when Claude Code regenerates a conversation's title mid-session, instead of staying on the title captured when the session was first followed.
+
+### Tests
+
+- Six new cases: `custom-title` and `agent-name` parsing, the compact/pretty-printed pre-filter, generated-title ordering and dedupe, and the rule that a session's retired title loses to the session that still uses it. **111 tests pass.**
+
+---
+
 ## [1.3.4] - 2026-10-24
 
 ### Fixed
@@ -223,6 +236,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+[1.3.5]: https://github.com/Miku3w3/ClaudeCodeTokenMonitor/compare/v1.3.4...v1.3.5
+[1.3.4]: https://github.com/Miku3w3/ClaudeCodeTokenMonitor/compare/v1.3.3...v1.3.4
 [1.3.3]: https://github.com/Miku3w3/ClaudeCodeTokenMonitor/compare/v1.3.2...v1.3.3
 [1.3.2]: https://github.com/Miku3w3/ClaudeCodeTokenMonitor/compare/v1.3.1...v1.3.2
 [1.3.1]: https://github.com/Miku3w3/ClaudeCodeTokenMonitor/compare/v1.3.0...v1.3.1
