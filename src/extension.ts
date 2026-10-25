@@ -142,12 +142,12 @@ const LABEL_SCAN = {
  * user actually typed.
  *
  * Claude Code titles a tab with `agentName || customTitle || aiTitle ||
- * firstPrompt`. The title hook writes a `custom-title` + `agent-name` pair at
- * each checkpoint, so a session that has a title never shows a user message on
- * its tab — scanning only for `user` lines made every generated title resolve
- * to no session at all. The older titles stay in the list because they are also
- * what the tab showed a checkpoint ago, and because a title can be reused by
- * another session, where the newer use must win.
+ * firstPrompt`. It writes a `custom-title` + `agent-name` pair whenever the
+ * title is set or changed, so a session that has a title never shows a user
+ * message on its tab — scanning only for `user` lines made every such title
+ * resolve to no session at all. The older titles stay in the list because they
+ * are also what the tab showed before it was retitled, and because a title can
+ * be reused by another session, where the newer use must win.
  */
 function getSessionLabels(s: { cwd: string; sessionId: string }, deep = false): string[] {
   const tp = path.join(claudeDir(), 'projects', encodeProjectPath(s.cwd), s.sessionId + '.jsonl');
@@ -202,7 +202,7 @@ function getSessionLabels(s: { cwd: string; sessionId: string }, deep = false): 
       if (start === 0) break;
       end = start;
       // User messages are the bulk of a transcript; stop once the recent window
-      // is full. A session's last checkpoint can sit behind a large tool output,
+      // is full. A session's last title line can sit behind a large tool output,
       // so keep looking for a generated title for a few more chunks — but never
       // let an untitled session turn the shallow scan into a full-file read.
       if (userTexts.length >= limits.labels) {
@@ -553,8 +553,8 @@ function processEvent(
     currentTitle = event.title;
     let mtimeMs = -1, size = -1;
     try { const st = fs.statSync(lastTranscriptPath); mtimeMs = st.mtimeMs; size = st.size; } catch { /* */ }
-    // Keep the labels already scanned: the tab may still be showing a title
-    // from a previous checkpoint, and an untitled tab falls back to user text.
+    // Keep the labels already scanned: the tab may still be showing a previous
+    // title, and an untitled tab falls back to user text.
     const previous = sessionTitleCache.get(currentSessionId);
     const labels = previous && previous.labels.includes(event.title)
       ? previous.labels

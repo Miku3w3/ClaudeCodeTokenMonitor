@@ -113,11 +113,11 @@ export function parseLine(lineJson: string): ParsedEvent | null {
     };
   }
 
-  // --- Conversation title written by a UserPromptSubmit hook ---
-  // Claude Code stores a hook-provided `sessionTitle` as a `custom-title` line
-  // followed by an `agent-name` line. Both are title events: the status bar
-  // shows the conversation's title, and the title changes at checkpoints in the
-  // middle of a session, not only when the session changes.
+  // --- Conversation title (hook-provided `sessionTitle`, rename, ...) ---
+  // Claude Code stores a conversation title as a `custom-title` line followed
+  // by an `agent-name` line. Both are title events: the status bar shows the
+  // conversation's title, and the title can change in the middle of a session,
+  // not only when the session changes.
   if (type === 'custom-title' || type === 'agent-name') {
     return {
       type: 'ai-title',

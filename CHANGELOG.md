@@ -11,8 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **The status bar stopped following conversations whose tab title is generated.** Once every session got an AI-written title, every tab switch broke: the title hook stores the title as `custom-title` and `agent-name` lines in the transcript, Claude Code shows that title on the tab, and the extension scanned only `user` and `ai-title` lines. The generated title matched no session, the tab resolved to `none`, and the status bar deliberately keeps the previous session on `none` — so every switch showed another conversation's numbers. Generated titles are now follow labels: the newest one first, older ones kept as alternates (a title is re-generated at checkpoints and a tab may still show the previous one), then `ai-title`, then user messages.
-- The status bar's own title now updates when Claude Code regenerates a conversation's title mid-session, instead of staying on the title captured when the session was first followed.
+- **The status bar stopped following conversations whose tab title is generated.** Setups that give every conversation an AI-written title (for example a `UserPromptSubmit` hook returning `sessionTitle`) broke every tab switch: Claude Code stores that title as `custom-title` and `agent-name` lines in the transcript and shows it on the tab, and the extension scanned only `user` and `ai-title` lines. The generated title matched no session, the tab resolved to `none`, and the status bar deliberately keeps the previous session on `none` — so every switch showed another conversation's numbers. Generated titles are now follow labels: the newest one first, older ones kept as alternates (a title can change while the conversation is open and a tab may still show the previous one), then `ai-title`, then user messages.
+- The status bar's own title now updates when a conversation's title changes mid-session, instead of staying on the title captured when the session was first followed.
 
 ### Tests
 

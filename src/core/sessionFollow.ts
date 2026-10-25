@@ -44,13 +44,14 @@ const NON_USER_TEXT = /^(\[Request interrupted|\[Request cancelled|<system-remin
  * The label Claude Code displays for a session.
  *
  * Claude Code's title priority is `agentName || customTitle || aiTitle ||
- * firstPrompt`, and it stores a hook-provided `sessionTitle` as a `custom-title`
- * line followed by an `agent-name` line. The title script returns one on every
- * checkpoint, so on current builds the tab shows the newest generated title and
- * user messages never reach the tab at all. Older builds wrote `ai-title`; a
- * session with no generated title falls back to the latest message the user
- * actually typed. The backward scan in `getSessionLabels` sees the agent-name
- * line first because it is written right after the custom-title line.
+ * firstPrompt`. Whenever a conversation gets a title — a hook-provided
+ * `sessionTitle`, a rename, or a CLI-generated title — Claude Code stores it as
+ * a `custom-title` line, and for a hook-provided title also an `agent-name`
+ * line. The newest of those is the tab title, so a titled conversation's tab
+ * never shows a user message. Older builds wrote `ai-title`; a session with no
+ * generated title falls back to the latest message the user actually typed. The
+ * backward scan in `getSessionLabels` sees the agent-name line first because it
+ * is written right after the custom-title line.
  */
 export function transcriptLabel(obj: any): { kind: 'ai-title' | 'title' | 'user'; text: string } | null {
   if (!obj || typeof obj !== 'object') return null;
