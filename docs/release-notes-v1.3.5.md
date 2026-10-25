@@ -144,9 +144,11 @@ code --install-extension claude-code-token-monitor-1.3.5.vsix
 
 本 Release 附带的 `.vsix`：
 
-SHA-256：`__SHA256__`
+SHA-256：`c98d9f79f39c890d86699945204f8868a320882be1e271b6dfbf7295251e1c4b`
 
-MD5：`__MD5__`
+MD5：`6ba03036ec62fab1c04fc51a42102cea`
+
+VirusTotal：https://www.virustotal.com/gui/file/c98d9f79f39c890d86699945204f8868a320882be1e271b6dfbf7295251e1c4b?nocache=1
 
 ---
 
